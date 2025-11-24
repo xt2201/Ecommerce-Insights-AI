@@ -1,0 +1,23 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "shopping_assistant": "./studio.py:graph"
+  },
+  "env": ".env",
+  "http": {
+    "cors": {
+      "allow_origins": [
+        "*"
+      ],
+      "allow_methods": [
+        "*"
+      ],
+      "allow_headers": [
+        "*"
+      ],
+      "allow_credentials": true
+    }
+  }
+}

@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import shadcn/ui design tokens with OKLCH colors */
+:root {
+  --background: oklch(0.9940 0 0);
+  --foreground: oklch(0.2178 0 0);
+  --card: oklch(1.0000 0 0);
+  --card-foreground: oklch(0.2178 0 0);
+  --popover: oklch(1.0000 0 0);
+  --popover-foreground: oklch(0.2178 0 0);
+  --primary: oklch(0.6028 0.2177 257.4239);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.9238 0.0093 232.3718);
+  --secondary-foreground: oklch(0.3564 0.0391 248.9745);
+  --muted: oklch(0.9605 0.0046 258.3248);
+  --muted-foreground: oklch(0.6299 0.0152 202.3668);
+  --accent: oklch(0.9439 0.0059 239.8222);
+  --accent-foreground: oklch(0.2178 0 0);
+  --destructive: oklch(0.6307 0.1940 29.4415);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --border: oklch(0.9028 0.0075 260.7316);
+  --input: oklch(1.0000 0 0);
+  --ring: oklch(0.6028 0.2177 257.4239);
+  
+  /* Custom status colors */
+  --positive: oklch(0.65 0.15 145);
+  --warning: oklch(0.75 0.12 85);
+  --info: oklch(0.60 0.15 250);
+  
+  /* Typography */
+  --font-sans: "Inter", sans-serif;
+  --font-serif: "PT Serif", serif;
+  --font-mono: "Roboto Mono", monospace;
+  
+  /* Border radius */
+  --radius: 0.375rem;
+}
+
+.dark {
+  color-scheme: dark;
+  
+  --background: oklch(0.1822 0 0);
+  --foreground: oklch(0.9067 0 0);
+  --card: oklch(0.2350 0 0);
+  --card-foreground: oklch(0.9067 0 0);
+  --popover: oklch(0.2350 0 0);
+  --popover-foreground: oklch(0.9067 0 0);
+  --primary: oklch(0.6028 0.2177 257.4239);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.3970 0.0444 249.0002);
+  --secondary-foreground: oklch(0.9067 0 0);
+  --muted: oklch(0.3351 0.0331 260.9120);
+  --muted-foreground: oklch(0.7788 0.0145 248.0137);
+  --accent: oklch(0.4091 0 0);
+  --accent-foreground: oklch(0.9067 0 0);
+  --destructive: oklch(0.6307 0.1940 29.4415);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --border: oklch(0.3950 0.0286 258.3628);
+  --input: oklch(0.2350 0 0);
+  --ring: oklch(0.6028 0.2177 257.4239);
+  
+  /* Custom status colors - lighter for dark mode */
+  --positive: oklch(0.70 0.15 145);
+  --warning: oklch(0.80 0.12 85);
+  --info: oklch(0.65 0.15 250);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" auto;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans), sans-serif;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  
+  code, pre, .font-mono {
+    font-family: var(--font-mono), "Courier New", monospace;
+  }
+}
+
+@layer components {
+  /* Price styling */
+  .price {
+    font-family: var(--font-mono), monospace;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  
+  /* Smooth transitions */
+  .transition-theme {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
+}
+
+/* Selection styling */
+::selection {
+  background-color: hsl(var(--primary) / 0.3);
+  color: hsl(var(--foreground));
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Gradient animation for hero title */
+@keyframes gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  animation: gradient 3s ease infinite;
+}

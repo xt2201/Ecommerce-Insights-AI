@@ -1,0 +1,28 @@
+{
+  "name": "ecommerce-agent-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "NODE_PATH=/opt/homebrew/bin tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "/opt/homebrew/bin/node dist/server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.11.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.16.5",
+    "ts-node": "^10.9.2",
+    "tslib": "^2.6.3",
+    "tsx": "^4.19.1",
+    "typescript": "^5.9.3"
+  }
+}

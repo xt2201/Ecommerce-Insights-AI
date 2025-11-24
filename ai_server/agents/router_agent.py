@@ -1,0 +1,255 @@
+"""Router Agent - Classifies queries and routes to appropriate workflow."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from ai_server.llm.llm_factory import get_llm
+from ai_server.schemas.agent_state import AgentState
+from ai_server.schemas.planning_models import QueryClassification
+from ai_server.schemas.output_models import ResponsePayload, AnalysisSnapshot
+from ai_server.memory.conversation_memory import ConversationMemory
+from ai_server.utils.prompt_loader import load_prompt
+from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
+from ai_server.utils.token_counter import extract_token_usage
+
+
+# Load prompts
+_PROMPTS = load_prompt("router_agent_prompts")
+
+
+def _get_prompt_section(prompt_name: str) -> str:
+    """Extract specific prompt section from loaded prompts."""
+    import re
+    
+    pattern = rf"## {prompt_name}.*?```template\n(.*?)```"
+    match = re.search(pattern, _PROMPTS, re.DOTALL)
+    
+    if match:
+        return match.group(1).strip()
+    
+    # Fallback
+    lines = _PROMPTS.split('\n')
+    in_section = False
+    prompt_lines = []
+    
+    for line in lines:
+        if f"## {prompt_name}" in line:
+            in_section = True
+            continue
+        if in_section:
+            if line.startswith('##'):
+                break
+            if line.startswith('```') or line.endswith('```'):
+                continue
+            prompt_lines.append(line)
+    
+    return '\n'.join(prompt_lines).strip()
+
+
+def classify_query(query: str) -> tuple[QueryClassification, dict]:
+    """Classify query to determine routing.
+    
+    Args:
+        query: User's search query
+        
+    Returns:
+        Tuple of (QueryClassification, usage_dict) with route, confidence, reasoning and actual token usage
+    """
+    try:
+        llm = get_llm(agent_name="router")
+        # Dùng include_raw=True để lấy cả parsed result và raw AIMessage (có token usage)
+        structured_llm = llm.with_structured_output(QueryClassification, include_raw=True)
+        
+        prompt_template = _get_prompt_section("Classify Query Type Prompt")
+        prompt = prompt_template.replace("{query}", query)
+        
+        # Invoke và nhận cả parsed + raw
+        out = structured_llm.invoke(prompt)
+        parsed = out["parsed"]  # QueryClassification object
+        raw = out["raw"]        # AIMessage với response_metadata
+        
+        # Extract actual token usage từ raw AIMessage
+        usage = extract_token_usage(raw)
+        
+        return parsed, usage
+        
+    except Exception as e:
+        # Fallback: default to standard
+        return QueryClassification(
+            route="standard",
+            confidence=0.5,
+            reasoning=f"Classification failed ({e}), using standard route"
+        ), {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
+def route_query(state: AgentState) -> Literal["planning", "direct_search", "clarification"]:
+    """Router function for conditional edges.
+    
+    Determines which workflow path to take based on query classification.
+    Uses ConversationMemory to detect follow-up queries.
+    """
+    query = state.get("user_query", "")
+    debug_notes = state.get("debug_notes", [])
+    trace_manager = get_trace_manager()
+    
+    # Check if this is a follow-up query
+    previous_queries = state.get("previous_queries", [])
+    is_followup = ConversationMemory.is_followup_query(query, previous_queries)
+    state["is_followup"] = is_followup
+    
+    if is_followup:
+        debug_notes.append(f"Router: Detected follow-up query (previous queries: {len(previous_queries)})")
+        # For follow-ups, extract reference context if available
+        if previous_queries:
+            # Note: We don't have full conversation turns here, but we have the basics
+            state["reference_context"] = {
+                "last_query": previous_queries[-1] if previous_queries else None,
+                "is_followup": True
+            }
+    
+    # Create trace if not exists
+    trace_id = state.get("trace_id")
+    if not trace_id:
+        trace = trace_manager.create_trace(
+            user_query=query,
+            session_id=state.get("session_id")
+        )
+        state["trace_id"] = trace.trace_id
+        trace_id = trace.trace_id
+    
+    # Create router step
+    step = trace_manager.create_step(
+        trace_id=trace_id,
+        step_type=StepType.ROUTER,
+        agent_name="router_agent"
+    )
+    
+    if not step:
+        # If step creation failed, proceed without tracing
+        classification, usage = classify_query(query)
+        
+        debug_notes.append(
+            f"Router: {classification.route} "
+            f"(confidence={classification.confidence:.2f}) - {classification.reasoning}"
+        )
+        
+        state["debug_notes"] = debug_notes
+        
+        # Map routes
+        if classification.route == "simple":
+            return "direct_search"
+        elif classification.route == "clarification":
+            return "clarification"
+        else:  # standard or complex
+            return "planning"
+    
+    try:
+        classification, usage = classify_query(query)
+        
+        debug_notes.append(
+            f"Router: {classification.route} "
+            f"(confidence={classification.confidence:.2f}) - {classification.reasoning}"
+            + (f" | Follow-up: {is_followup}" if is_followup else "")
+        )
+        
+        state["debug_notes"] = debug_notes
+        
+        # Map routes
+        if classification.route == "simple":
+            route_decision = "direct_search"
+        elif classification.route == "clarification":
+            route_decision = "clarification"
+        else:  # standard or complex
+            route_decision = "planning"
+        
+        # Complete step with success
+        trace_manager.complete_step(
+            trace_id=trace_id,
+            step_id=step.step_id,
+            output_data={
+                "route": route_decision,
+                "classification": classification.route,
+                "confidence": classification.confidence,
+                "reasoning": classification.reasoning
+            },
+            token_usage=TokenUsage(
+                prompt_tokens=usage.get("input_tokens", 0),
+                completion_tokens=usage.get("output_tokens", 0)
+            )
+        )
+        
+        return route_decision
+            
+    except Exception as e:
+        # Fail step on error
+        trace_manager.fail_step(
+            trace_id=trace_id,
+            step_id=step.step_id,
+            error=str(e)
+        )
+        
+        # Default to planning on error
+        debug_notes.append(f"Router error: {e}, defaulting to planning")
+        state["debug_notes"] = debug_notes
+        return "planning"
+
+
+def quick_search_handler(state: AgentState) -> AgentState:
+    """Quick search for simple queries.
+    
+    Skips planning and uses query directly as keyword.
+    """
+    query = state.get("user_query", "")
+    
+    state["search_plan"] = {
+        "keywords": [query],
+        "amazon_domain": "amazon.com",
+        "max_price": None,
+        "engines": ["amazon"],
+        "asin_focus_list": [],
+        "notes": "Quick search (specific product name, no planning needed)"
+    }
+    
+    debug_notes = state.get("debug_notes", [])
+    debug_notes.append("Using quick search path (simple query)")
+    state["debug_notes"] = debug_notes
+    
+    return state
+
+
+def request_clarification_handler(state: AgentState) -> AgentState:
+    """Request clarification for vague queries.
+    
+    Returns a response asking user for more details.
+    """
+    query = state.get("user_query", "")
+    
+    clarification_message = (
+        f"Tôi cần thêm thông tin để giúp bạn tìm kiếm tốt hơn.\n\n"
+        f"Bạn đã nói: '{query}'\n\n"
+        f"Vui lòng cung cấp:\n"
+        f"• Loại sản phẩm cụ thể bạn đang tìm?\n"
+        f"• Ngân sách của bạn là bao nhiêu?\n"
+        f"• Có tính năng nào bạn cần không?\n"
+        f"• Có thương hiệu ưa thích không?\n\n"
+        f"Ví dụ: 'tai nghe bluetooth dưới $100 với chống ồn'"
+    )
+    
+    state["response"] = ResponsePayload(
+        summary=clarification_message,
+        recommendations=[],
+        analysis=AnalysisSnapshot(
+            cheapest=None,
+            highest_rated=None,
+            best_value=None,
+            noteworthy_insights=["Query requires clarification"]
+        ),
+        raw_products=[]
+    )
+    
+    debug_notes = state.get("debug_notes", [])
+    debug_notes.append("Requesting clarification (vague query)")
+    state["debug_notes"] = debug_notes
+    
+    return state

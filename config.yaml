@@ -1,0 +1,120 @@
+# Amazon Smart Shopping Assistant - Configuration
+# API keys are loaded from .env file (not stored here)
+
+# LangSmith Configuration (optional monitoring/tracing)
+langsmith:
+  enabled: true
+  project_name: "E-Commerce Agentic AI"
+  endpoint: "https://api.smith.langchain.com/"
+  tracing_v2: true
+
+# Agent-Specific Configurations
+# Each agent must specify its provider and model settings
+agents:
+  # Router Agent - Determines workflow path
+  router:
+    provider: "cerebras"  # Use global provider if not specified
+    model_name: "llama3.1-8b"  # Use global model if not specified
+    temperature: 0.0
+    max_tokens: 2000
+  
+  # Planning Agent - Query analysis and search planning
+  planning:
+    provider: "cerebras"
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+    max_tokens: 4000
+    max_retries: 2
+  
+  # Collection Agent - Product search and data gathering
+  collection:
+    provider: "cerebras"
+    model_name: "qwen-3-32b"
+    temperature: 0.0
+    max_tokens: 4000
+    max_retries: 2
+    quality_threshold: 3
+  
+  # Analysis Agent - Chain-of-thought product analysis
+  analysis:
+    provider: "cerebras"
+    model_name: "gpt-oss-120b"
+    temperature: 0.2
+    max_tokens: 8000
+    max_products_to_analyze: 10
+  
+  # Response Agent - Structured response generation
+  response:
+    provider: "cerebras"
+    model_name: "qwen-3-235b-a22b-instruct-2507"
+    temperature: 0.3
+    max_tokens: 8000
+    max_recommendations: 5
+
+  # Review Intelligence Agent
+  review:
+    provider: "cerebras"
+    model_name: "zai-glm-4.6"
+    temperature: 0.1
+    max_tokens: 4000
+
+  # Market Intelligence Agent
+  market:
+    provider: "cerebras"
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+    max_tokens: 4000
+
+  # Price Tracking Agent
+  price:
+    provider: "cerebras"
+    model_name: "llama-3.3-70b"
+    temperature: 0.1
+    max_tokens: 2000
+
+llm_fallback:
+  gemini:
+    model_name: "models/gemini-2.0-flash"
+    temperature: 0.1
+    max_tokens: 8000
+  openai:
+    model_name: "gpt-4o-mini"
+    temperature: 0.1
+    max_tokens: 8000
+  cerebras:
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+    max_tokens: 2000
+
+
+# SerpAPI Configuration
+serpapi:
+  engine: "amazon"
+  timeout: 30
+  max_results: 20
+
+# Memory & Personalization Configuration (Phase 3)
+memory:
+  # Storage backend
+  storage:
+    backend: "sqlite"  # sqlite, redis (future)
+    sqlite:
+      db_path: "data/sessions.db"
+  
+  # Conversation history
+  conversation:
+    max_turns: 10  # Keep last N turns in active memory
+    summarize_after: 5  # Summarize if conversation exceeds N turns
+  
+  # Preference learning
+  preferences:
+    min_confidence: 0.3  # Minimum confidence to apply preference
+    learning_rate: 0.1  # How quickly preferences are learned
+    decay_factor: 0.9  # Older preferences decay over time
+  
+  # Session management
+  session:
+    default_ttl: 3600  # Default session TTL: 1 hour
+    max_ttl: 86400  # Maximum session TTL: 24 hours
+    cleanup_interval: 300  # Clean expired sessions every 5 minutes
+
