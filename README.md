@@ -1,8 +1,8 @@
 # Amazon Smart Shopping Assistant
 
-> 🚀 **AI-Powered Product Search** - LangGraph + OpenAI GPT-4 + SerpAPI
+> 🚀 **AI-Powered Product Search** - LangGraph + Cerebras AI + SerpAPI
 
-Multi-agent AI system for intelligent Amazon product recommendations using LangGraph workflow orchestration.
+Multi-agent AI system for intelligent Amazon product recommendations using LangGraph workflow orchestration and Cerebras ultra-fast inference.
 
 **🎉 Status:** Production Ready | **Version:** 1.2.0
 
@@ -23,7 +23,8 @@ chmod +x setup.sh start.sh run_langgraph.sh
 
 # 2. Configure API keys in .env
 # SERPAPI_API_KEY=your_key
-# OPENAI_API_KEY=your_key
+# CEREBRAS_API_KEY=your_key
+# LANGSMITH_API_KEY=your_key (optional, for tracing)
 
 # 3. Start LangGraph Server (Recommended for Dev)
 ./run_langgraph.sh
@@ -43,9 +44,9 @@ cd frontend && npm run dev
 
 ---
 
-## 🏗️ Architecture: 7-Agent System
+## 🏗️ Architecture: 8-Agent System
 
-The system has evolved from a 4-agent to a **7-agent architecture** with parallel execution for maximum efficiency.
+The system uses an **8-agent architecture** with parallel execution for maximum efficiency and speed.
 
 ```mermaid
 graph TD
@@ -64,14 +65,16 @@ graph TD
 ```
 
 ### Core Agents:
-1.  **Router Agent**: Classifies queries (Direct/Planning/Clarification) and manages conversation flow.
-2.  **Planning Agent**: Analyzes intent, extracts requirements, and builds a search strategy.
-3.  **Collection Agent**: Fetches raw product data from Amazon via SerpAPI.
-4.  **Review Intelligence Agent** (Parallel): Analyzes sentiment, pros/cons, and detects fake reviews.
-5.  **Market Intelligence Agent** (Parallel): Identifies market segments, trends, and price gaps.
-6.  **Price Tracking Agent** (Parallel): Analyzes price history and deal status.
-7.  **Analysis Agent**: Synthesizes all data, calculates Value Scores, and makes trade-off decisions.
-8.  **Response Agent**: Generates the final comprehensive markdown report.
+1.  **Router Agent** (Llama 3.1 8B): Classifies queries (Direct/Planning/Clarification) and manages conversation flow.
+2.  **Planning Agent** (Qwen 3 32B): Analyzes intent, extracts requirements, and builds a search strategy.
+3.  **Collection Agent** (Qwen 3 32B): Fetches raw product data from Amazon via SerpAPI.
+4.  **Review Intelligence Agent** (ZAI GLM 4.6): Analyzes sentiment, pros/cons, and detects fake reviews.
+5.  **Market Intelligence Agent** (Qwen 3 32B): Identifies market segments, trends, and price gaps.
+6.  **Price Tracking Agent** (Llama 3.3 70B): Analyzes price history and deal status.
+7.  **Analysis Agent** (GPT-OSS 120B): Synthesizes all data, calculates Value Scores, and makes trade-off decisions.
+8.  **Response Agent** (Qwen 3 235B): Generates the final comprehensive markdown report.
+
+**All agents run on Cerebras ultra-fast inference** with fallback to Gemini 2.0 Flash and GPT-4o-mini.
 
 👉 **Deep Dive:** Read the full [Technical Agentic Architecture Report](docs/technical_agentic_architecture_report.md).
 
@@ -80,12 +83,14 @@ graph TD
 ## 🎯 Features
 
 ### AI Server (Python + FastAPI + LangGraph)
-- ✅ **7 Autonomous Agents**: Specialized roles for deep analysis.
+- ✅ **8 Autonomous Agents**: Specialized roles for deep analysis, each optimized with specific Cerebras models.
 - ✅ **Parallel Execution**: Review, Market, and Price agents run concurrently for speed.
 - ✅ **LangGraph Studio**: Visual debugging and interaction with the agent graph.
-- ✅ **OpenAI GPT-4**: Powering complex reasoning and decision making.
+- ✅ **Cerebras Ultra-Fast Inference**: Sub-second response times with state-of-the-art open models.
+- ✅ **Multi-Provider Fallback**: Automatic fallback to Gemini/OpenAI if Cerebras is unavailable.
 - ✅ **SerpAPI Integration**: Real-time Amazon product data.
 - ✅ **Streaming Responses**: Real-time feedback to the frontend.
+- ✅ **LangSmith Tracing**: Optional monitoring and debugging.
 
 ### Frontend (Next.js + React)
 - ✅ Modern responsive UI with Tailwind CSS.
@@ -100,10 +105,10 @@ graph TD
 ```
 e-com/
 ├── ai_server/            # Python Backend & AI Logic
-│   ├── agents/          # Agent implementations (Router, Planner, etc.)
-│   ├── clients/         # External API clients (SerpAPI, OpenAI)
+│   ├── agents/          # 8 Agent implementations (Router, Planner, etc.)
+│   ├── clients/         # External API clients (SerpAPI, Cerebras)
 │   ├── graphs/          # LangGraph workflow definitions
-│   ├── memory/          # State management
+│   ├── memory/          # State management & session storage
 │   ├── tools/           # Custom tools
 │   └── server.py        # FastAPI entry point
 │
@@ -111,11 +116,7 @@ e-com/
 │   ├── src/app/         # App router pages
 │   └── src/components/  # React components
 │
-├── docs/                 # Documentation
-│   ├── architecture/    # System design & reports
-│   ├── guides/          # Setup & usage guides
-│   └── technical_agentic_architecture_report.md # Deep dive report
-│
+├── config.yaml           # Agent & LLM configuration
 ├── run_langgraph.sh      # Script to start LangGraph dev server
 ├── langgraph.json        # LangGraph configuration
 └── README.md            # This file
@@ -129,15 +130,18 @@ e-com/
 |-------|-----------|
 | **Orchestration** | **LangGraph** (Stateful Multi-Agent Workflows) |
 | **Backend** | Python 3.11, FastAPI |
-| **AI Model** | OpenAI GPT-4o / GPT-4-Turbo |
+| **AI Models** | **Cerebras** (Llama 3.3, Qwen 3, GPT-OSS 120B) |
+| **Fallback Models** | Gemini 2.0 Flash, GPT-4o-mini |
 | **Data Source** | SerpAPI (Amazon Product Data) |
 | **Frontend** | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| **Dev Tools** | LangGraph Studio, Docker |
+| **Monitoring** | LangSmith (optional) |
+| **Dev Tools** | LangGraph Studio |
 
 ---
 
 ## 📚 Documentation
 
+- **[config.yaml](config.yaml)** - Agent and LLM configuration (models, temperatures, tokens).
 - **[docs/technical_agentic_architecture_report.md](docs/technical_agentic_architecture_report.md)** - **MUST READ**: Detailed architecture deep dive.
 - **[docs/guides/QUICKSTART.md](docs/guides/QUICKSTART.md)** - Setup instructions.
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history.
@@ -146,9 +150,10 @@ e-com/
 
 ## 🚀 Recent Updates
 
-### v1.2.0 - Parallel Intelligence & 7-Agent Architecture
+### v1.2.0 - Parallel Intelligence & 8-Agent Architecture
 - ⚡ **Performance**: Implemented parallel execution for Intelligence agents (Review, Market, Price), reducing latency by ~40%.
 - 🧠 **Smarter Analysis**: Added specialized agents for market context and price tracking.
+- 🚀 **Cerebras Integration**: Migrated to Cerebras ultra-fast inference with multiple model options.
 - 🛠️ **LangGraph Studio**: Full integration for visual debugging.
 - 📝 **Consolidated Response**: Optimized response generation for faster Time-To-First-Token.
 
@@ -164,11 +169,4 @@ e-com/
 
 ---
 
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details
-
----
-
-**Built with ❤️ using Python, LangGraph, & OpenAI**
-
+**Built with ❤️ using Python, LangGraph, & Cerebras AI**
