@@ -83,11 +83,11 @@ def classify_query(query: str) -> tuple[QueryClassification, dict]:
         ), {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
 
-def route_query(state: AgentState) -> Literal["planning", "direct_search", "clarification"]:
-    """Router function for conditional edges.
+def router_node(state: AgentState) -> AgentState:
+    """Router Node - Classifies query and updates state.
     
-    Determines which workflow path to take based on query classification.
-    Uses ConversationMemory to detect follow-up queries.
+    This node performs the actual classification and stores the result in the state.
+    The conditional edge will then read this state to determine the next step.
     """
     query = state.get("user_query", "")
     debug_notes = state.get("debug_notes", [])
@@ -102,7 +102,6 @@ def route_query(state: AgentState) -> Literal["planning", "direct_search", "clar
         debug_notes.append(f"Router: Detected follow-up query (previous queries: {len(previous_queries)})")
         # For follow-ups, extract reference context if available
         if previous_queries:
-            # Note: We don't have full conversation turns here, but we have the basics
             state["reference_context"] = {
                 "last_query": previous_queries[-1] if previous_queries else None,
                 "is_followup": True
@@ -125,24 +124,7 @@ def route_query(state: AgentState) -> Literal["planning", "direct_search", "clar
         agent_name="router_agent"
     )
     
-    if not step:
-        # If step creation failed, proceed without tracing
-        classification, usage = classify_query(query)
-        
-        debug_notes.append(
-            f"Router: {classification.route} "
-            f"(confidence={classification.confidence:.2f}) - {classification.reasoning}"
-        )
-        
-        state["debug_notes"] = debug_notes
-        
-        # Map routes
-        if classification.route == "simple":
-            return "direct_search"
-        elif classification.route == "clarification":
-            return "clarification"
-        else:  # standard or complex
-            return "planning"
+    route_decision = "planning" # Default
     
     try:
         classification, usage = classify_query(query)
@@ -153,8 +135,6 @@ def route_query(state: AgentState) -> Literal["planning", "direct_search", "clar
             + (f" | Follow-up: {is_followup}" if is_followup else "")
         )
         
-        state["debug_notes"] = debug_notes
-        
         # Map routes
         if classification.route == "simple":
             route_decision = "direct_search"
@@ -162,37 +142,50 @@ def route_query(state: AgentState) -> Literal["planning", "direct_search", "clar
             route_decision = "clarification"
         else:  # standard or complex
             route_decision = "planning"
+            
+        # Update state
+        state["route"] = classification.route
+        state["route_decision"] = route_decision
+        state["confidence"] = classification.confidence
+        state["reasoning"] = classification.reasoning
         
         # Complete step with success
-        trace_manager.complete_step(
-            trace_id=trace_id,
-            step_id=step.step_id,
-            output_data={
-                "route": route_decision,
-                "classification": classification.route,
-                "confidence": classification.confidence,
-                "reasoning": classification.reasoning
-            },
-            token_usage=TokenUsage(
-                prompt_tokens=usage.get("input_tokens", 0),
-                completion_tokens=usage.get("output_tokens", 0)
+        if step:
+            trace_manager.complete_step(
+                trace_id=trace_id,
+                step_id=step.step_id,
+                output_data={
+                    "route": route_decision,
+                    "classification": classification.route,
+                    "confidence": classification.confidence,
+                    "reasoning": classification.reasoning
+                },
+                token_usage=TokenUsage(
+                    prompt_tokens=usage.get("input_tokens", 0),
+                    completion_tokens=usage.get("output_tokens", 0)
+                )
             )
-        )
-        
-        return route_decision
             
     except Exception as e:
         # Fail step on error
-        trace_manager.fail_step(
-            trace_id=trace_id,
-            step_id=step.step_id,
-            error=str(e)
-        )
+        if step:
+            trace_manager.fail_step(
+                trace_id=trace_id,
+                step_id=step.step_id,
+                error=str(e)
+            )
         
         # Default to planning on error
         debug_notes.append(f"Router error: {e}, defaulting to planning")
-        state["debug_notes"] = debug_notes
-        return "planning"
+        state["route_decision"] = "planning"
+        
+    state["debug_notes"] = debug_notes
+    return state
+
+
+def route_query(state: AgentState) -> Literal["planning", "direct_search", "clarification"]:
+    """Conditional edge function to select the next node based on state."""
+    return state.get("route_decision", "planning")
 
 
 def quick_search_handler(state: AgentState) -> AgentState:
