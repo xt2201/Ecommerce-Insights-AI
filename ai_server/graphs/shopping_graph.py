@@ -12,6 +12,7 @@ from ai_server.agents.router_agent import (
     quick_search_handler,
     request_clarification_handler,
     route_query,
+    router_node,
 )
 from ai_server.agents.review_agent import analyze_reviews
 from ai_server.agents.market_agent import analyze_market
@@ -54,7 +55,7 @@ def build_graph():
     graph = StateGraph(AgentState)
     
     # Add router node (entry point)
-    graph.add_node("router", lambda s: s)  # Pass-through node for routing
+    graph.add_node("router", traceable_node("Router", router_node))
     
     # Add workflow nodes
     graph.add_node("quick_search", traceable_node("QuickSearch", quick_search_handler))

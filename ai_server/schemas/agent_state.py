@@ -57,6 +57,9 @@ class AgentState(TypedDict, total=False):
     
     # Routing and errors
     route: str  # Query route (simple/standard/complex/clarification)
+    route_decision: str # The final decision (same as route, but explicit)
+    confidence: float # Classification confidence
+    reasoning: str # Classification reasoning
     plan: Dict[str, Any]  # Planning v2 output
     analysis_error: str  # Analysis errors
     response_error: str  # Response errors
