@@ -51,9 +51,12 @@ The system uses an **8-agent architecture** with parallel execution for maximum 
 ```mermaid
 graph TD
     User[User Query] --> Router
-    Router -->|Planning| Planner
-    Router -->|Quick| Collection
-    Planner --> Collection
+    Router -->|direct_search| QuickSearch[Quick Search]
+    Router -->|planning| Planning
+    Router -->|clarification| Clarification
+    QuickSearch --> Collection
+    Planning --> Collection
+    Clarification --> END1[END]
     Collection --> Review[Review Intelligence]
     Collection --> Market[Market Intelligence]
     Collection --> Price[Price Tracking]
@@ -61,22 +64,25 @@ graph TD
     Market --> Analysis
     Price --> Analysis
     Analysis --> Response
-    Response --> Final[Final Response]
+    Response --> END2[Final Response]
 ```
 
 ### Core Agents:
-1.  **Router Agent** (Llama 3.1 8B): Classifies queries (Direct/Planning/Clarification) and manages conversation flow.
-2.  **Planning Agent** (Qwen 3 32B): Analyzes intent, extracts requirements, and builds a search strategy.
-3.  **Collection Agent** (Qwen 3 32B): Fetches raw product data from Amazon via SerpAPI.
-4.  **Review Intelligence Agent** (ZAI GLM 4.6): Analyzes sentiment, pros/cons, and detects fake reviews.
-5.  **Market Intelligence Agent** (Qwen 3 32B): Identifies market segments, trends, and price gaps.
-6.  **Price Tracking Agent** (Llama 3.3 70B): Analyzes price history and deal status.
-7.  **Analysis Agent** (GPT-OSS 120B): Synthesizes all data, calculates Value Scores, and makes trade-off decisions.
-8.  **Response Agent** (Qwen 3 235B): Generates the final comprehensive markdown report.
 
-**All agents run on Cerebras ultra-fast inference** with fallback to Gemini 2.0 Flash and GPT-4o-mini.
+| # | Agent | Model | Role | Uses LLM | Prompts File |
+|---|-------|-------|------|----------|---------------|
+| 1 | **Router Agent** | Llama 3.1 8B | Classifies queries → `direct_search` / `planning` / `clarification` | ✅ | `router_agent_prompts.md` |
+| 2 | **Planning Agent** | Qwen 3 32B | Analyzes intent, extracts requirements, builds search strategy | ✅ | `planning_agent_prompts.md` (via tools) |
+| 3 | **Collection Agent** | - | Fetches raw product data from Amazon via SerpAPI | ❌ | None (API only) |
+| 4 | **Review Intelligence** | ZAI GLM 4.6 | Sentiment analysis, pros/cons, fake review detection | ✅ | `review_agent_prompts.md` |
+| 5 | **Market Intelligence** | Qwen 3 32B | Market segments, trends, price gaps analysis | ✅ | `market_agent_prompts.md` |
+| 6 | **Price Tracking** | Llama 3.3 70B | Price history analysis, deal status | ✅ | `price_agent_prompts.md` |
+| 7 | **Analysis Agent** | GPT-OSS 120B | Synthesizes all data, Value Scores, trade-off decisions | ✅ | `analysis_agent_prompts.md` |
+| 8 | **Response Agent** | Qwen 3 235B | Generates final comprehensive markdown report | ✅ | `response_agent_prompts.md` |
 
-👉 **Deep Dive:** Read the full [Technical Agentic Architecture Report](docs/technical_agentic_architecture_report.md).
+**Execution:** All agents run on **Cerebras ultra-fast inference** with fallback to Gemini 2.0 Flash and GPT-4o-mini.
+
+**Parallel Execution:** After Collection, Review/Market/Price agents run **in parallel** for maximum speed.
 
 ---
 
@@ -105,11 +111,22 @@ graph TD
 ```
 e-com/
 ├── ai_server/            # Python Backend & AI Logic
-│   ├── agents/          # 8 Agent implementations (Router, Planner, etc.)
-│   ├── clients/         # External API clients (SerpAPI, Cerebras)
-│   ├── graphs/          # LangGraph workflow definitions
-│   ├── memory/          # State management & session storage
-│   ├── tools/           # Custom tools
+│   ├── agents/          # 8 Agent implementations
+│   │   ├── router_agent.py       # Query classification & routing
+│   │   ├── planning_agent.py     # Search strategy planning
+│   │   ├── collection_agent.py   # SerpAPI product fetching
+│   │   ├── review_agent.py       # Review sentiment analysis
+│   │   ├── market_agent.py       # Market trend analysis
+│   │   ├── price_agent.py        # Price history analysis
+│   │   ├── analysis_agent.py     # Chain-of-thought analysis
+│   │   └── response_agent.py     # Final response generation
+│   ├── prompts/         # Agent prompt templates (7 .md files)
+│   ├── schemas/         # Pydantic models for structured outputs
+│   ├── tools/           # Planning tools with LLM calls
+│   ├── clients/         # External API clients (SerpAPI)
+│   ├── graphs/          # LangGraph workflow (shopping_graph.py)
+│   ├── memory/          # Session & preference management
+│   ├── llm/             # LLM factory with fallback logic
 │   └── server.py        # FastAPI entry point
 │
 ├── frontend/             # Next.js Frontend
