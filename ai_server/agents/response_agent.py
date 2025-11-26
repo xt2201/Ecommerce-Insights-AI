@@ -603,7 +603,7 @@ class ResponseAgent:
             
             # Build markdown
             lines = [
-                "## 🎯 Quick Answer\n",
+                "## 🎯 Answer\n",
                 f"**{summary.best_recommendation}** - {summary.key_reason}\n",
                 f"{summary.market_overview} {summary.confidence_statement}\n",
                 "---\n",

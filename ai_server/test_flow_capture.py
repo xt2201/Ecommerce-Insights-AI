@@ -68,7 +68,7 @@ async def run_test_flow():
                 elif node == "planning":
                     plan = output.get("search_plan", {})
                     print("📋 Plan Created:")
-                    print(f"   - Intent: {plan.get('intent', {}).get('primary_intent', 'N/A')}")
+                    print(f"   - Intent: {plan.get('intent', {}).get('intent', 'N/A')}")
                     save_capture("planning", plan)
                 
                 elif node == "collection":
@@ -88,7 +88,8 @@ async def run_test_flow():
                 elif node == "review_intelligence":
                     analysis = output.get("review_analysis", {})
                     print("⭐ Review Intelligence:")
-                    print(f"   - Analyzed: {len(analysis) if isinstance(analysis, list) else 'N/A'} items")
+                    count = len(analysis) if isinstance(analysis, (list, dict)) else 'N/A'
+                    print(f"   - Analyzed: {count} items")
                     save_capture("review_intelligence", analysis)
                 
                 elif node == "market_intelligence":
@@ -100,7 +101,8 @@ async def run_test_flow():
                 elif node == "price_tracking":
                     analysis = output.get("price_analysis", {})
                     print("💰 Price Tracking:")
-                    print(f"   - Analyzed: {len(analysis) if isinstance(analysis, list) else 'N/A'} items")
+                    count = len(analysis) if isinstance(analysis, (list, dict)) else 'N/A'
+                    print(f"   - Analyzed: {count} items")
                     save_capture("price_tracking", analysis)
                 
                 elif node == "analysis":

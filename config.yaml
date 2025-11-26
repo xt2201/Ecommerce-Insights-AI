@@ -1,4 +1,6 @@
+# ============================================================================
 # Amazon Smart Shopping Assistant - Configuration
+# ============================================================================
 # API keys are loaded from .env file (not stored here)
 
 # LangSmith Configuration (optional monitoring/tracing)
@@ -8,17 +10,34 @@ langsmith:
   endpoint: "https://api.smith.langchain.com/"
   tracing_v2: true
 
+# ============================================================================
 # Agent-Specific Configurations
-# Each agent must specify its provider and model settings
+# ============================================================================
+# 8 Agents in execution order:
+#   1. Router → 2. Planning → 3. Collection → 
+#   4. Review (parallel) | 5. Market (parallel) | 6. Price (parallel) →
+#   7. Analysis → 8. Response
+#
+# Collection Agent does NOT use LLM (API-only for SerpAPI calls)
+# ============================================================================
+
 agents:
-  # Router Agent - Determines workflow path
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Router Agent - Query Classification & Routing
+  # ─────────────────────────────────────────────────────────────────────────
+  # Routes to: direct_search | planning | clarification
+  # Prompts: ai_server/prompts/router_agent_prompts.md
   router:
-    provider: "cerebras"  # Use global provider if not specified
-    model_name: "llama3.1-8b"  # Use global model if not specified
+    provider: "cerebras"
+    model_name: "llama3.1-8b"
     temperature: 0.0
     max_tokens: 2000
   
-  # Planning Agent - Query analysis and search planning
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Planning Agent - Search Strategy Builder
+  # ─────────────────────────────────────────────────────────────────────────
+  # Uses tools in: ai_server/tools/planning_tools.py
+  # Prompts: ai_server/prompts/planning_agent_prompts.md
   planning:
     provider: "cerebras"
     model_name: "qwen-3-32b"
@@ -26,74 +45,94 @@ agents:
     max_tokens: 4000
     max_retries: 2
   
-  # Collection Agent - Product search and data gathering
-  collection:
-    provider: "cerebras"
-    model_name: "qwen-3-32b"
-    temperature: 0.0
-    max_tokens: 4000
-    max_retries: 2
-    quality_threshold: 3
-  
-  # Analysis Agent - Chain-of-thought product analysis
-  analysis:
-    provider: "cerebras"
-    model_name: "gpt-oss-120b"
-    temperature: 0.2
-    max_tokens: 8000
-    max_products_to_analyze: 10
-  
-  # Response Agent - Structured response generation
-  response:
-    provider: "cerebras"
-    model_name: "qwen-3-235b-a22b-instruct-2507"
-    temperature: 0.3
-    max_tokens: 8000
-    max_recommendations: 5
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Collection Agent - SerpAPI Product Fetching
+  # ─────────────────────────────────────────────────────────────────────────
+  # NOTE: Does NOT use LLM - pure API calls to SerpAPI
 
-  # Review Intelligence Agent
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. Review Intelligence Agent (PARALLEL)
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prompts: ai_server/prompts/review_agent_prompts.md
   review:
     provider: "cerebras"
     model_name: "zai-glm-4.6"
     temperature: 0.1
     max_tokens: 4000
 
-  # Market Intelligence Agent
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. Market Intelligence Agent (PARALLEL)
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prompts: ai_server/prompts/market_agent_prompts.md
   market:
     provider: "cerebras"
     model_name: "qwen-3-32b"
     temperature: 0.1
     max_tokens: 4000
 
-  # Price Tracking Agent
+  # ─────────────────────────────────────────────────────────────────────────
+  # 6. Price Tracking Agent (PARALLEL)
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prompts: ai_server/prompts/price_agent_prompts.md
   price:
     provider: "cerebras"
     model_name: "llama-3.3-70b"
     temperature: 0.1
     max_tokens: 2000
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # 7. Analysis Agent - Chain-of-Thought Reasoning
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prompts: ai_server/prompts/analysis_agent_prompts.md
+  analysis:
+    provider: "cerebras"
+    model_name: "gpt-oss-120b"
+    temperature: 0.2
+    max_tokens: 8000
+    max_products_to_analyze: 5
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # 8. Response Agent - Final Report Generation
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prompts: ai_server/prompts/response_agent_prompts.md
+  response:
+    provider: "cerebras"
+    model_name: "zai-glm-4.6"
+    temperature: 0.3
+    max_tokens: 20000
+    max_recommendations: 5
+
+# ============================================================================
+# LLM Fallback Configuration
+# ============================================================================
+# Order: Cerebras → Gemini → OpenAI
 llm_fallback:
+  cerebras:
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+    max_tokens: 2000
   gemini:
-    model_name: "models/gemini-2.0-flash"
+    model_name: "models/gemini-2.0-flash-lite"
     temperature: 0.1
     max_tokens: 8000
   openai:
     model_name: "gpt-4o-mini"
     temperature: 0.1
     max_tokens: 8000
-  cerebras:
-    model_name: "qwen-3-32b"
-    temperature: 0.1
-    max_tokens: 2000
 
 
+# ============================================================================
 # SerpAPI Configuration
+# ============================================================================
 serpapi:
   engine: "amazon"
   timeout: 30
   max_results: 20
 
+# ============================================================================
 # Memory & Personalization Configuration (Phase 3)
+# ============================================================================
 memory:
   # Storage backend
   storage:

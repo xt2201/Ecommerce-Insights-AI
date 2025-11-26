@@ -1,4 +1,4 @@
-"""Pydantic models for Analysis Agent v2 - Chain-of-Thought Reasoning."""
+"""Pydantic models for Analysis Agent - Chain-of-Thought Reasoning."""
 
 from __future__ import annotations
 

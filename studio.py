@@ -9,10 +9,10 @@ To run with LangGraph Studio:
 
 The graph will process your query through these stages:
 - Router: Determines the best workflow path (quick search, planning, or clarification)
-- Planning v2: Autonomous query analysis and search planning (if needed)
+- Planning: Autonomous query analysis and search planning (if needed)
 - Collection: Gathers product data from Amazon via SerpAPI
-- Analysis v2: Chain-of-thought product analysis with reasoning
-- Response v2: Structured response generation with comprehensive insights
+- Analysis: Chain-of-thought product analysis with reasoning
+- Response: Structured response generation with comprehensive insights
 
 Example queries:
 - "Find me budget-friendly wireless earbuds under $100"

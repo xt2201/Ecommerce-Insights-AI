@@ -111,7 +111,7 @@ class SerpAPIClient:
                     logger.warning(f"SerpAPI Error Body: {exc.response.text}")
                     # Do not retry on 4xx client errors
                     if 400 <= exc.response.status_code < 500:
-                        raise SerpAPIError(f"SerpAPI Client Error: {exc}") from exc
+                        raise SerpAPIError(f"SerpAPI Client Error: {exc} - Body: {exc.response.text}") from exc
                 last_error = exc
             else:
                 if payload.get("error"):

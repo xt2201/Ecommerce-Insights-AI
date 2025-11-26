@@ -88,25 +88,16 @@ def collect_products(state: AgentState) -> AgentState:
             
             title = item.get("title") or ""
             
-            # BRAND EXTRACTION: Get brand from SerpAPI response
-            brand = item.get("brand") or ""
-            
-            # BRAND ENHANCEMENT: Prepend brand to title if not already there
+            # BRAND EXTRACTION: SerpAPI Amazon engine does not return 'brand' field
+            # We rely on the title for brand identification in later stages
+            brand = ""
             enhanced_title = title
-            if brand:
-                brand_lower = brand.lower()
-                title_lower = title.lower()
-                
-                # If brand exists but title doesn't start with it, prepend
-                if not title_lower.startswith(brand_lower):
-                    enhanced_title = f"{brand} {title}"
-                    logger.debug(f"Enhanced title with brand '{brand}': {enhanced_title}")
             
             product = {
                 "asin": item.get("asin") or item.get("product_id") or "",
                 "title": enhanced_title,
                 "product_name": enhanced_title,  # Alias for consistency
-                "brand": brand,  # Include brand as separate field
+                "brand": "",  # Brand field is not available from SerpAPI organic results
                 "price": price_val,
                 "rating": item.get("rating"),
                 "reviews_count": item.get("reviews_count") or item.get("reviews"),
@@ -142,7 +133,10 @@ def collect_products(state: AgentState) -> AgentState:
                         review_payload = serp_client.get_product_reviews(asin=asin, amazon_domain=domain)
                         reviews_data[asin] = review_payload
                     except Exception as e:
-                        logger.error(f"Failed to fetch reviews for {asin}: {e}")
+                        if "Unsupported `amazon_product_reviews` search engine" in str(e):
+                            logger.warning(f"Review fetching skipped for {asin}: Engine not supported by API plan.")
+                        else:
+                            logger.error(f"Failed to fetch reviews for {asin}: {e}")
                 
                 # Fetch Offers
                 if "amazon_offers" in engines:

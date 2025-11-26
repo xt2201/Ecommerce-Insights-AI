@@ -94,23 +94,3 @@ def extract_token_usage(raw_msg: Any) -> dict[str, int]:
     
     # Return zeros if no usage found
     return usage
-
-
-def estimate_tokens(text: str, multiplier: float = 1.3) -> int:
-    """Estimate token count from text.
-    
-    Rule of thumb: ~0.75 tokens per word for English text.
-    We use 1.3 tokens per word to be conservative.
-    
-    Args:
-        text: Input text
-        multiplier: Tokens per word (default: 1.3)
-        
-    Returns:
-        Estimated token count
-    """
-    if not text:
-        return 0
-    
-    word_count = len(text.split())
-    return int(word_count * multiplier)

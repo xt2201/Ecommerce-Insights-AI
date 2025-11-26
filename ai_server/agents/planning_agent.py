@@ -71,7 +71,7 @@ def plan_search(state: AgentState) -> AgentState:
         
         # Step 4: Extract preferences using PreferenceExtractor (still useful for long-term memory)
         # We can optimize this later or use the extracted requirements to populate it
-        debug_notes.append("Planning v2: Updating user preferences...")
+        debug_notes.append("Planning: Updating user preferences...")
         preference_extractor = _get_preference_extractor()
         
         # Use extracted requirements to update preferences directly without another LLM call
@@ -94,7 +94,7 @@ def plan_search(state: AgentState) -> AgentState:
             user_preferences.confidence = min(1.0, user_preferences.confidence + 0.1)
             
             debug_notes.append(
-                f"Planning v2: Updated preferences from plan (confidence: {user_preferences.confidence:.2f})"
+                f"Planning: Updated preferences from plan (confidence: {user_preferences.confidence:.2f})"
             )
         
         # Step 5: Build search plan
@@ -107,16 +107,9 @@ def plan_search(state: AgentState) -> AgentState:
         intent_lower = str(intent_analysis.get('intent', '')).lower()
         query_lower = query.lower()
         
-        # Add review engine if intent suggests reviews or quality assessment
-        review_keywords = ['review', 'opinion', 'sentiment', 'rating', 'comment', 'best', 'top', 'recommend', 'vs', 'compare']
-        if any(k in intent_lower or k in query_lower for k in review_keywords):
-            engines.append("amazon_product_reviews")
-            debug_notes.append("Planning v2: Added review engine based on intent")
-            
-        # Add offers engine if intent suggests price comparison
-        if any(k in intent_lower or k in query_lower for k in ['price', 'deal', 'offer', 'cheap', 'cost', 'seller']):
-            engines.append("amazon_offers")
-            debug_notes.append("Planning v2: Added offers engine based on intent")
+        # Note: Specialized engines like amazon_product_reviews are not supported by all plans
+        # We rely on the main 'amazon' engine which provides basic review data
+        debug_notes.append("Planning: Using standard amazon engine")
 
         search_plan = {
             "keywords": keywords[:5],  # Max 5 keywords
@@ -147,7 +140,7 @@ def plan_search(state: AgentState) -> AgentState:
         state["debug_notes"] = debug_notes
         
         debug_notes.append(
-            f"Planning v2: Created plan with {len(keywords)} keywords "
+            f"Planning: Created plan with {len(keywords)} keywords "
             f"(confidence={confidence:.2f})"
         )
         
@@ -178,7 +171,7 @@ def plan_search(state: AgentState) -> AgentState:
             )
         
         # Fallback to simple plan
-        debug_notes.append(f"Planning v2 failed: {e}, using fallback")
+        debug_notes.append(f"Planning failed: {e}, using fallback")
         
         from ai_server.agents.planning_agent import _fallback_plan
         plan = _fallback_plan(query)

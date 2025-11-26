@@ -30,7 +30,7 @@ def build_graph():
             ┌──────────────────┼──────────────────┐
             ▼                  ▼                  ▼
     ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-    │Quick Search  │   │  Planning v2 │   │Clarification │
+    │ Quick Search │   │  Planning    │   │Clarification │
     └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
            │                  │                  │
            └────────►  Collection  ◄─────────────┘

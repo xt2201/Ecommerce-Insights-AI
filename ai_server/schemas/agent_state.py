@@ -47,12 +47,12 @@ class AgentState(TypedDict, total=False):
 
     
     # Phase 2 additions
-    analysis_result: Dict[str, Any]  # Analysis v2 result with reasoning
+    analysis_result: Dict[str, Any]  # Analysis result with reasoning
     review_analysis: Dict[str, Any]  # Output from Review Agent
     market_analysis: Dict[str, Any]  # Output from Market Agent
     price_analysis: Dict[str, Any]   # Output from Price Agent
     recommended_products: List[Dict[str, Any]]  # Top recommendations with reasoning
-    final_response: Dict[str, Any]  # Response v2 structured output
+    final_response: Dict[str, Any]  # Response structured output
     formatted_response: str  # Final markdown response
     
     # Routing and errors
@@ -60,7 +60,7 @@ class AgentState(TypedDict, total=False):
     route_decision: str # The final decision (same as route, but explicit)
     confidence: float # Classification confidence
     reasoning: str # Classification reasoning
-    plan: Dict[str, Any]  # Planning v2 output
+    plan: Dict[str, Any]  # Planning output
     analysis_error: str  # Analysis errors
     response_error: str  # Response errors
     debug_notes: List[str]  # Debug information

@@ -465,10 +465,6 @@ class AnalysisAgent:
             formatted.append(f"  Price: ${product.get('price', 'N/A')}")
             formatted.append(f"  Rating: {product.get('rating', 'N/A')}/5.0")
             formatted.append(f"  Reviews: {product.get('reviews_count', 0)}")
-            
-            if "features" in product:
-                formatted.append(f"  Features: {', '.join(product['features'][:5])}")
-            
             formatted.append("")
         
         return "\n".join(formatted)
@@ -482,12 +478,6 @@ class AnalysisAgent:
             f"Rating: {product.get('rating', 'N/A')}/5.0",
             f"Reviews: {product.get('reviews_count', 0)}"
         ]
-        
-        if "features" in product and product["features"]:
-            lines.append(f"Features: {', '.join(product['features'][:5])}")
-        
-        if "description" in product:
-            lines.append(f"Description: {product['description'][:200]}...")
         
         return "\n".join(lines)
     

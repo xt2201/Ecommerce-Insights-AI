@@ -1,4 +1,4 @@
-# Analysis Agent v2 - Reasoning Prompts
+# Analysis Agent - Reasoning Prompts
 
 ## compare_products_cot
 

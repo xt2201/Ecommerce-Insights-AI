@@ -1,4 +1,4 @@
-# Agent Output Models for Planning Agent v2
+# Agent Output Models for Planning Agent
 
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional

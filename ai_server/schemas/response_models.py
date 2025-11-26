@@ -1,4 +1,4 @@
-"""Pydantic models for Response Agent v2 - Enhanced Response Generation."""
+"""Pydantic models for Response Agent - Enhanced Response Generation."""
 
 from __future__ import annotations
 
@@ -230,7 +230,7 @@ class FinalResponse(BaseModel):
     """Complete response structure for user."""
     
     executive_summary: ExecutiveSummary = Field(...,
-        description="Quick answer summary"
+        description="Answer summary"
     )
     
     recommendations: List[RecommendationDetails] = Field(...,

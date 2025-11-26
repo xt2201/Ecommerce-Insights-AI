@@ -1,4 +1,4 @@
-# Response Agent v2 Prompts - Enhanced Response Generation with Reasoning
+# Response Agent Prompts - Enhanced Response Generation with Reasoning
 
 ## system_prompt
 
@@ -180,7 +180,7 @@ You are formatting the final response for display to the user.
 Combine all components into a well-structured final response:
 
 ```markdown
-## 🎯 Quick Answer
+## 🎯 Answer
 {executive_summary}
 
 ---
