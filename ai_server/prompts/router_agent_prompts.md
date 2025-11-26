@@ -3,7 +3,12 @@
 ## Classify Query Type Prompt
 
 ```template
-Classify this shopping query to determine the optimal workflow: "{query}"
+Classify this shopping query to determine the optimal workflow.
+
+Current Query: "{query}"
+
+Chat History:
+{chat_history}
 
 Classification routes:
 1. **simple**: Specific product name or ASIN
@@ -31,16 +36,20 @@ Assessment criteria:
 - Constraints: How many requirements are mentioned?
 - Clarity: Is the intent clear?
 - Complexity: How complex is the search likely to be?
+- Context: Is this a follow-up to the previous conversation? (e.g., "how about the second one?", "is it cheaper?", "compare them")
 
 Return ONLY valid JSON (no markdown, no explanations):
 {{
     "route": "standard",
     "confidence": 0.9,
-    "reasoning": "Clear product category with no ambiguity. User wants wireless earbuds which is a well-defined product category."
+    "reasoning": "Clear product category with no ambiguity. User wants wireless earbuds which is a well-defined product category.",
+    "is_followup": false,
+    "followup_reasoning": "No previous context referenced."
 }}
 
 Route options: "simple", "standard", "complex", or "clarification"
 Confidence: 0.0-1.0 (how confident you are in this classification)
+is_followup: true/false (is this a follow-up query?)
 ```
 
 ---

@@ -69,6 +69,14 @@ class QueryClassification(BaseModel):
     reasoning: str = Field(...,
         description="Explanation for this classification"
     )
+    is_followup: bool = Field(
+        default=False,
+        description="Whether this query is a follow-up to previous conversation"
+    )
+    followup_reasoning: Optional[str] = Field(
+        None,
+        description="Reasoning for follow-up detection"
+    )
 
 
 class ComprehensiveSearchPlan(BaseModel):

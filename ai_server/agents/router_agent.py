@@ -47,11 +47,12 @@ def _get_prompt_section(prompt_name: str) -> str:
     return '\n'.join(prompt_lines).strip()
 
 
-def classify_query(query: str) -> tuple[QueryClassification, dict]:
+def classify_query(query: str, chat_history: list[str] = None) -> tuple[QueryClassification, dict]:
     """Classify query to determine routing.
     
     Args:
         query: User's search query
+        chat_history: List of previous user queries
         
     Returns:
         Tuple of (QueryClassification, usage_dict) with route, confidence, reasoning and actual token usage
@@ -62,7 +63,13 @@ def classify_query(query: str) -> tuple[QueryClassification, dict]:
         structured_llm = llm.with_structured_output(QueryClassification, include_raw=True)
         
         prompt_template = _get_prompt_section("Classify Query Type Prompt")
-        prompt = prompt_template.replace("{query}", query)
+        
+        # Format chat history
+        history_str = "No previous history."
+        if chat_history:
+            history_str = "\n".join([f"- {q}" for q in chat_history[-5:]]) # Last 5 queries
+            
+        prompt = prompt_template.replace("{query}", query).replace("{chat_history}", history_str)
         
         # Invoke và nhận cả parsed + raw
         out = structured_llm.invoke(prompt)
@@ -79,7 +86,9 @@ def classify_query(query: str) -> tuple[QueryClassification, dict]:
         return QueryClassification(
             route="standard",
             confidence=0.5,
-            reasoning=f"Classification failed ({e}), using standard route"
+            reasoning=f"Classification failed ({e}), using standard route",
+            is_followup=False,
+            followup_reasoning="Fallback due to error"
         ), {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
 
@@ -92,20 +101,6 @@ def router_node(state: AgentState) -> AgentState:
     query = state.get("user_query", "")
     debug_notes = state.get("debug_notes", [])
     trace_manager = get_trace_manager()
-    
-    # Check if this is a follow-up query
-    previous_queries = state.get("previous_queries", [])
-    is_followup = ConversationMemory.is_followup_query(query, previous_queries)
-    state["is_followup"] = is_followup
-    
-    if is_followup:
-        debug_notes.append(f"Router: Detected follow-up query (previous queries: {len(previous_queries)})")
-        # For follow-ups, extract reference context if available
-        if previous_queries:
-            state["reference_context"] = {
-                "last_query": previous_queries[-1] if previous_queries else None,
-                "is_followup": True
-            }
     
     # Create trace if not exists
     trace_id = state.get("trace_id")
@@ -127,12 +122,29 @@ def router_node(state: AgentState) -> AgentState:
     route_decision = "planning" # Default
     
     try:
-        classification, usage = classify_query(query)
+        # Get previous queries for context
+        previous_queries = state.get("previous_queries", [])
+        
+        # Classify with history context
+        classification, usage = classify_query(query, previous_queries)
+        
+        # Use LLM-detected follow-up status
+        is_followup = classification.is_followup
+        state["is_followup"] = is_followup
+        
+        if is_followup:
+            debug_notes.append(f"Router: Detected follow-up query (Reason: {classification.followup_reasoning})")
+            # For follow-ups, extract reference context if available
+            if previous_queries:
+                state["reference_context"] = {
+                    "last_query": previous_queries[-1] if previous_queries else None,
+                    "is_followup": True,
+                    "context_reasoning": classification.followup_reasoning
+                }
         
         debug_notes.append(
             f"Router: {classification.route} "
             f"(confidence={classification.confidence:.2f}) - {classification.reasoning}"
-            + (f" | Follow-up: {is_followup}" if is_followup else "")
         )
         
         # Map routes
@@ -158,11 +170,13 @@ def router_node(state: AgentState) -> AgentState:
                     "route": route_decision,
                     "classification": classification.route,
                     "confidence": classification.confidence,
-                    "reasoning": classification.reasoning
+                    "reasoning": classification.reasoning,
+                    "is_followup": is_followup
                 },
                 token_usage=TokenUsage(
                     prompt_tokens=usage.get("input_tokens", 0),
-                    completion_tokens=usage.get("output_tokens", 0)
+                    completion_tokens=usage.get("output_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0)
                 )
             )
             
