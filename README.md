@@ -4,7 +4,7 @@
 
 Multi-agent AI system for intelligent Amazon product recommendations using LangGraph workflow orchestration and Cerebras ultra-fast inference.
 
-**🎉 Status:** Production Ready | **Version:** 1.2.0
+**🎉 Status:** Production Ready | **Version:** 1.3.0
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
@@ -71,7 +71,7 @@ graph TD
 
 | # | Agent | Model | Role | Uses LLM | Prompts File |
 |---|-------|-------|------|----------|---------------|
-| 1 | **Router Agent** | Llama 3.1 8B | Classifies queries → `direct_search` / `planning` / `clarification` | ✅ | `router_agent_prompts.md` |
+| 1 | **Router Agent** | Llama 3.1 8B | Query classification with **Agentic Memory** for follow-up detection | ✅ | `router_agent_prompts.md` |
 | 2 | **Planning Agent** | Qwen 3 32B | Analyzes intent, extracts requirements, builds search strategy | ✅ | `planning_agent_prompts.md` (via tools) |
 | 3 | **Collection Agent** | - | Fetches raw product data from Amazon via SerpAPI | ❌ | None (API only) |
 | 4 | **Review Intelligence** | ZAI GLM 4.6 | Sentiment analysis, pros/cons, fake review detection | ✅ | `review_agent_prompts.md` |
@@ -90,6 +90,7 @@ graph TD
 
 ### AI Server (Python + FastAPI + LangGraph)
 - ✅ **8 Autonomous Agents**: Specialized roles for deep analysis, each optimized with specific Cerebras models.
+- ✅ **Agentic Memory System**: LLM-powered context awareness for follow-up detection and personalization.
 - ✅ **Parallel Execution**: Review, Market, and Price agents run concurrently for speed.
 - ✅ **LangGraph Studio**: Visual debugging and interaction with the agent graph.
 - ✅ **Cerebras Ultra-Fast Inference**: Sub-second response times with state-of-the-art open models.
@@ -158,14 +159,21 @@ e-com/
 
 ## 📚 Documentation
 
+- **[architecture.md](architecture.md)** - **MUST READ**: Complete technical implementation guide for all 8 agents + Memory system.
 - **[config.yaml](config.yaml)** - Agent and LLM configuration (models, temperatures, tokens).
-- **[docs/technical_agentic_architecture_report.md](docs/technical_agentic_architecture_report.md)** - **MUST READ**: Detailed architecture deep dive.
+- **[docs/technical_agentic_architecture_report.md](docs/technical_agentic_architecture_report.md)** - Detailed architecture deep dive.
 - **[docs/guides/QUICKSTART.md](docs/guides/QUICKSTART.md)** - Setup instructions.
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history.
 
 ---
 
 ## 🚀 Recent Updates
+
+### v1.3.0 - Agentic Memory & Context-Aware Intelligence
+- 🧠 **Agentic Memory**: LLM-powered follow-up detection with semantic understanding of conversation context.
+- 🎯 **Personalization Engine**: User preference learning and personalized product scoring.
+- 📊 **Enhanced Router**: Context-aware routing that understands when users switch topics or continue conversations.
+- 🔍 **Smart Context Switching**: Handles follow-up queries like "what about cheaper options?" or "compare the first two".
 
 ### v1.2.0 - Parallel Intelligence & 8-Agent Architecture
 - ⚡ **Performance**: Implemented parallel execution for Intelligence agents (Review, Market, Price), reducing latency by ~40%.
