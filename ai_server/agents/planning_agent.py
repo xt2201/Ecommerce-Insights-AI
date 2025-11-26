@@ -13,6 +13,7 @@ from ai_server.tools.planning_tools import (
     analyze_query_intent,
     expand_keywords,
     extract_requirements,
+    generate_comprehensive_plan_with_tokens,
 )
 from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
 
@@ -54,10 +55,8 @@ def plan_search(state: AgentState) -> AgentState:
         # Single comprehensive analysis step
         debug_notes.append("Planning: Generating comprehensive plan...")
         
-        from ai_server.tools.planning_tools import generate_comprehensive_plan
-        
-        # Invoke comprehensive tool
-        plan_result = generate_comprehensive_plan.invoke({"query": query})
+        # Use the version that returns tokens for tracking
+        plan_result, total_tokens = generate_comprehensive_plan_with_tokens(query)
         
         # Extract components
         intent_analysis = plan_result.get("intent_analysis", {})
@@ -123,7 +122,8 @@ def plan_search(state: AgentState) -> AgentState:
                 f"| Confidence: {confidence:.2f}"
             ),
             # Store requirements for analysis agent
-            "requirements": requirements
+            "requirements": requirements,
+            "intent": intent_analysis
         }
         
         # Add features to notes if present
@@ -143,9 +143,11 @@ def plan_search(state: AgentState) -> AgentState:
             f"Planning: Created plan with {len(keywords)} keywords "
             f"(confidence={confidence:.2f})"
         )
+        debug_notes.append(f"Planning: Token usage: {total_tokens}")
         
-        # Complete step with success
+        # Complete step with success and actual token usage
         if trace_id and step:
+            total = total_tokens.get("total_tokens", 0)
             trace_manager.complete_step(
                 trace_id=trace_id,
                 step_id=step.step_id,
@@ -156,8 +158,9 @@ def plan_search(state: AgentState) -> AgentState:
                     "keywords_count": len(keywords)
                 },
                 token_usage=TokenUsage(
-                    prompt_tokens=len(query.split()) * 3,  # Estimate
-                    completion_tokens=200  # Estimate for planning
+                    prompt_tokens=total_tokens.get("input_tokens", 0),
+                    completion_tokens=total_tokens.get("output_tokens", 0),
+                    total_tokens=total
                 )
             )
         

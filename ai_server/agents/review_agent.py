@@ -190,12 +190,27 @@ def analyze_reviews(state: AgentState) -> AgentState:
                 "flags": authenticity_check.flags,
                 "aspect_sentiment": sentiment_analysis.aspect_sentiment
             }
+        
+        # Complete step with token usage
+        if trace_id and step:
+            total = total_tokens["input_tokens"] + total_tokens["output_tokens"]
+            logger.info(f"Review Agent total tokens: {total_tokens['input_tokens']} input + {total_tokens['output_tokens']} output = {total} total")
+            trace_manager.complete_step(
+                trace_id=trace_id,
+                step_id=step.step_id,
+                output_data={"products_analyzed": len(analyzed_reviews)},
+                token_usage=TokenUsage(
+                    prompt_tokens=total_tokens["input_tokens"],
+                    completion_tokens=total_tokens["output_tokens"],
+                    total_tokens=total
+                )
+            )
             
     except Exception as e:
         logger.error(f"Error in Review Agent: {e}", exc_info=True)
         if trace_id and step:
             trace_manager.fail_step(trace_id, step.step_id, str(e))
-            
+    
     return {"review_analysis": analyzed_reviews}
 
 

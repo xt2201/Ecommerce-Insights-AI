@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage
 
 from ai_server.graphs.shopping_graph import graph
 from ai_server.core.telemetry import configure_langsmith
+from ai_server.core.trace import get_trace_manager
 from ai_server.utils.logger import get_logger
 
 # Setup logging
@@ -46,9 +47,13 @@ async def run_test_flow():
     
     initial_state = {
         "user_query": query,
-        "chat_history": [],
-        "trace_id": f"test_run_{int(time.time())}"
+        "chat_history": []
+        # Don't pass trace_id - let router_agent create it
     }
+    
+    total_tokens = 0
+    trace_manager = get_trace_manager()
+    current_trace_id = None  # Track trace_id across nodes
     
     try:
         # Run graph
@@ -56,6 +61,52 @@ async def run_test_flow():
             for node, output in event.items():
                 print(f"📍 Node Completed: {node.upper()}")
                 
+                # Get token usage from trace manager (accurate)
+                # Use trace_id from output if available, otherwise use saved one
+                trace_id = output.get("trace_id") or current_trace_id
+                if trace_id and not current_trace_id:
+                    current_trace_id = trace_id  # Save for parallel nodes
+                trace = trace_manager.get_trace(trace_id) if trace_id else None
+                
+                # Find the step for this node
+                node_tokens = 0
+                input_tok = 0
+                output_tok = 0
+                
+                if trace:
+                    # Map node name to agent name suffix
+                    node_to_agent = {
+                        "router": "router_agent",
+                        "planning": "planning_agent",
+                        "quick_search": "router_agent",
+                        "collection": "collection_agent",
+                        "review_intelligence": "review_agent",
+                        "market_intelligence": "market_agent",
+                        "price_tracking": "price_agent",
+                        "analysis": "analysis_agent",
+                        "response": "response_agent"
+                    }
+                    agent_name = node_to_agent.get(node, node)
+                    
+                    # Find matching step (most recent step for this agent)
+                    for step in reversed(trace.steps):  # Most recent first
+                        if step.agent_name == agent_name:
+                            if step.token_usage and step.token_usage.total_tokens > 0:
+                                node_tokens = step.token_usage.total_tokens
+                                input_tok = step.token_usage.prompt_tokens
+                                output_tok = step.token_usage.completion_tokens
+                                print(f"   🎟️ Token Usage: {node_tokens} (In: {input_tok}, Out: {output_tok})")
+                            break
+                
+                if node_tokens == 0:
+                    # No token data available (e.g., Collection agent doesn't use LLM)
+                    if node == "collection":
+                        print(f"   🎟️ Token Usage: N/A (API only, no LLM)")
+                    else:
+                        print(f"   🎟️ Token Usage: 0 (no LLM calls made)")
+                
+                total_tokens += node_tokens
+
                 if node == "router":
                     data = {
                         "route_decision": output.get("route_decision"),
@@ -125,6 +176,8 @@ async def run_test_flow():
                     save_capture("response", {"formatted_response": response}) # Save full response
                 
                 print("")
+        
+        print(f"💰 Total Token Usage: {total_tokens}")
                 
     except Exception as e:
         logger.error(f"Error running flow: {e}", exc_info=True)

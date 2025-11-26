@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 from ai_server.clients.serpapi import SerpAPIClient
 from ai_server.schemas.agent_state import AgentState
-from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
+from ai_server.core.trace import get_trace_manager, StepType
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ def collect_products(state: AgentState) -> AgentState:
                     except Exception as e:
                         logger.error(f"Failed to fetch offers for {asin}: {e}")
 
-        # Complete step with success
+        # Complete step with success (no token usage - Collection uses API, not LLM)
         if trace_id and step:
             trace_manager.complete_step(
                 trace_id=trace_id,
@@ -157,11 +157,8 @@ def collect_products(state: AgentState) -> AgentState:
                     "keywords": keywords,
                     "domain": domain,
                     "deep_dive_count": len(reviews_data)
-                },
-                token_usage=TokenUsage(
-                    prompt_tokens=0,  # No LLM call
-                    completion_tokens=0
-                )
+                }
+                # No token_usage - Collection Agent does not use LLM
             )
         
     except Exception as e:

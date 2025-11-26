@@ -131,9 +131,24 @@ def analyze_market(state: AgentState) -> AgentState:
         # Run LLM analysis
         market_analysis, usage = agent.analyze_market_trends(user_query, products)
         
+        # Complete step with token usage
+        if trace_id and step:
+            total = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+            logger.info(f"Market Agent total tokens: {usage.get('input_tokens', 0)} input + {usage.get('output_tokens', 0)} output = {total} total")
+            trace_manager.complete_step(
+                trace_id=trace_id,
+                step_id=step.step_id,
+                output_data={"products_analyzed": len(products)},
+                token_usage=TokenUsage(
+                    prompt_tokens=usage.get("input_tokens", 0),
+                    completion_tokens=usage.get("output_tokens", 0),
+                    total_tokens=total
+                )
+            )
+        
     except Exception as e:
         logger.error(f"Error in Market Agent: {e}", exc_info=True)
         if trace_id and step:
             trace_manager.fail_step(trace_id, step.step_id, str(e))
-            
+    
     return {"market_analysis": market_analysis.model_dump()}

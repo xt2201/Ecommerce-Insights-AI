@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict
+from typing import Dict, Tuple
 
 from langchain_core.tools import tool
 
@@ -57,6 +57,17 @@ def _get_llm():
     """Get configured LLM instance using factory pattern."""
     # Use agent-specific LLM configuration
     return get_llm(agent_name="planning")
+
+
+def _extract_token_usage(raw_response) -> dict:
+    """Extract token usage from LLM response."""
+    tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
+        tokens["input_tokens"] = raw_response.usage_metadata.get("input_tokens", 0)
+        tokens["output_tokens"] = raw_response.usage_metadata.get("output_tokens", 0)
+        tokens["total_tokens"] = tokens["input_tokens"] + tokens["output_tokens"]
+    return tokens
+
 
 
 @tool
@@ -236,3 +247,57 @@ def generate_comprehensive_plan(query: str) -> Dict:
             },
             "reasoning": "Fallback due to error"
         }
+
+
+def generate_comprehensive_plan_with_tokens(query: str) -> Tuple[Dict, Dict]:
+    """Generate comprehensive plan and return with token usage.
+    
+    This is the non-tool version that returns both plan and token dict.
+    Use this when you need to track token usage (e.g., in planning_agent).
+    
+    Args:
+        query: User's search query
+        
+    Returns:
+        Tuple of (plan_dict, token_dict)
+    """
+    tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    
+    try:
+        from ai_server.schemas.planning_models import ComprehensiveSearchPlan
+        
+        llm = _get_llm()
+        structured_llm = llm.with_structured_output(ComprehensiveSearchPlan, include_raw=True)
+        
+        prompt_template = _get_prompt_section("Comprehensive Search Plan Prompt")
+        prompt = prompt_template.replace("{query}", query)
+        
+        result = structured_llm.invoke(prompt)
+        plan = result["parsed"]
+        raw_response = result["raw"]
+        
+        # Extract token usage
+        tokens = _extract_token_usage(raw_response)
+        logger.info(f"generate_comprehensive_plan tokens: {tokens['input_tokens']} input + {tokens['output_tokens']} output = {tokens['total_tokens']} total")
+        
+        return plan.model_dump(), tokens
+        
+    except Exception as e:
+        logger.warning(f"generate_comprehensive_plan failed: {e}, using fallback")
+        # Fallback to basic plan
+        return {
+            "intent_analysis": {
+                "intent": "product_search",
+                "specificity": 0.5,
+                "requires_clarification": False,
+                "confidence": 0.5
+            },
+            "keywords": [query],
+            "requirements": {
+                "max_price": None,
+                "min_rating": None,
+                "required_features": [],
+                "brand_preferences": []
+            },
+            "reasoning": "Fallback due to error"
+        }, tokens

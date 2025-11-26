@@ -124,10 +124,25 @@ def analyze_prices(state: AgentState) -> AgentState:
             
             total_tokens["input_tokens"] += usage.get("input_tokens", 0)
             total_tokens["output_tokens"] += usage.get("output_tokens", 0)
+        
+        # Complete step with token usage
+        if trace_id and step:
+            total = total_tokens["input_tokens"] + total_tokens["output_tokens"]
+            logger.info(f"Price Agent total tokens: {total_tokens['input_tokens']} input + {total_tokens['output_tokens']} output = {total} total")
+            trace_manager.complete_step(
+                trace_id=trace_id,
+                step_id=step.step_id,
+                output_data={"products_analyzed": len(analyzed_prices)},
+                token_usage=TokenUsage(
+                    prompt_tokens=total_tokens["input_tokens"],
+                    completion_tokens=total_tokens["output_tokens"],
+                    total_tokens=total
+                )
+            )
             
     except Exception as e:
         logger.error(f"Error in Price Agent: {e}", exc_info=True)
         if trace_id and step:
             trace_manager.fail_step(trace_id, step.step_id, str(e))
-            
+    
     return {"price_analysis": analyzed_prices}

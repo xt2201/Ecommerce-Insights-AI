@@ -20,6 +20,7 @@ from ai_server.schemas.analysis_models import (
 )
 from ai_server.utils.prompt_loader import load_prompt
 from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
+from ai_server.utils.token_counter import extract_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class AnalysisAgent:
         self,
         products: List[Dict[str, Any]],
         user_needs: Dict[str, Any]
-    ) -> ProductComparison:
+    ) -> tuple[ProductComparison, Dict[str, int]]:
         """Compare products using chain-of-thought reasoning.
         
         Args:
@@ -74,8 +75,10 @@ class AnalysisAgent:
             user_needs: User requirements and preferences
             
         Returns:
-            ProductComparison with step-by-step reasoning
+            Tuple of (ProductComparison with step-by-step reasoning, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             # Create structured output LLM with token tracking
             structured_llm = self.llm.with_structured_output(ProductComparison, include_raw=True)
@@ -99,13 +102,11 @@ class AnalysisAgent:
             raw_response = result["raw"]
             
             # Extract token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"compare_products_cot tokens: {input_tokens} input + {output_tokens} output = {input_tokens + output_tokens} total")
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"compare_products_cot tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out = {token_usage['total_tokens']} total")
             
             logger.info(f"Product comparison completed with {len(comparison.reasoning_chain)} reasoning steps")
-            return comparison
+            return comparison, token_usage
             
         except Exception as e:
             logger.error(f"Error in compare_products_cot: {e}")
@@ -129,13 +130,13 @@ class AnalysisAgent:
                 trade_offs="{}",
                 recommendation="Unable to complete detailed comparison due to error",
                 confidence=0.3
-            )
+            ), token_usage
     
     def calculate_value_score_reasoning(
         self,
         product: Dict[str, Any],
         user_needs: Dict[str, Any]
-    ) -> ValueScore:
+    ) -> tuple[ValueScore, Dict[str, int]]:
         """Calculate value score with transparent reasoning.
         
         Args:
@@ -143,8 +144,10 @@ class AnalysisAgent:
             user_needs: User requirements
             
         Returns:
-            ValueScore with reasoning explanation
+            Tuple of (ValueScore with reasoning explanation, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(ValueScore, include_raw=True)
             
@@ -163,6 +166,10 @@ class AnalysisAgent:
             value_score = result["parsed"]
             raw_response = result["raw"]
             
+            # Extract token usage
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"calculate_value_score tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out")
+            
             # Debug: Log raw response if parsing failed
             if value_score is None:
                 logger.warning(
@@ -170,12 +177,6 @@ class AnalysisAgent:
                     f"Raw response type: {type(raw_response)}\n"
                     f"Raw content preview: {str(raw_response.content if hasattr(raw_response, 'content') else raw_response)[:200]}"
                 )
-            
-            # Extract token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"calculate_value_score tokens: {input_tokens} input + {output_tokens} output")
             
             # Check if LLM failed to parse (returned None)
             if value_score is None:
@@ -185,7 +186,7 @@ class AnalysisAgent:
             # Safe format for overall_score (handle None)
             score_val = value_score.overall_score if value_score.overall_score is not None else 0.0
             logger.info(f"Value score calculated: {score_val:.2f} for {product.get('title', 'unknown')}")
-            return value_score
+            return value_score, token_usage
             
         except Exception as e:
             logger.error(f"Error calculating value score: {e}")
@@ -215,14 +216,14 @@ class AnalysisAgent:
                 strengths=[],
                 weaknesses=[],
                 confidence=0.4
-            )
+            ), token_usage
     
     def explain_recommendation(
         self,
         product: Dict[str, Any],
         user_needs: Dict[str, Any],
         alternatives: List[Dict[str, Any]]
-    ) -> RecommendationExplanation:
+    ) -> tuple[RecommendationExplanation, Dict[str, int]]:
         """Generate detailed explanation for recommendation.
         
         Args:
@@ -231,8 +232,10 @@ class AnalysisAgent:
             alternatives: Other products considered
             
         Returns:
-            RecommendationExplanation with pros/cons and reasoning
+            Tuple of (RecommendationExplanation with pros/cons and reasoning, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(RecommendationExplanation, include_raw=True)
             
@@ -254,13 +257,11 @@ class AnalysisAgent:
             raw_response = result["raw"]
             
             # Extract token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"explain_recommendation tokens: {input_tokens} input + {output_tokens} output")
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"explain_recommendation tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out")
             
             logger.info(f"Recommendation explanation generated for {product.get('title', 'unknown')}")
-            return explanation
+            return explanation, token_usage
             
         except Exception as e:
             logger.error(f"Error generating recommendation explanation: {e}")
@@ -279,13 +280,13 @@ class AnalysisAgent:
                 alternatives_considered=[],
                 confidence_breakdown=[FloatValue(key="overall", value=0.5)],
                 overall_confidence=0.5
-            )
+            ), token_usage
     
     def identify_tradeoffs(
         self,
         products: List[Dict[str, Any]],
         user_needs: Dict[str, Any]
-    ) -> TradeoffAnalysis:
+    ) -> tuple[TradeoffAnalysis, Dict[str, int]]:
         """Identify tradeoffs between different products.
         
         Args:
@@ -293,8 +294,10 @@ class AnalysisAgent:
             user_needs: User requirements
             
         Returns:
-            TradeoffAnalysis with budget/quality/features analysis
+            Tuple of (TradeoffAnalysis with budget/quality/features analysis, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(TradeoffAnalysis, include_raw=True)
             
@@ -314,13 +317,11 @@ class AnalysisAgent:
             raw_response = result["raw"]
             
             # Extract token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"identify_tradeoffs tokens: {input_tokens} input + {output_tokens} output")
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"identify_tradeoffs tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out")
             
             logger.info("Tradeoff analysis completed")
-            return tradeoffs
+            return tradeoffs, token_usage
             
         except Exception as e:
             logger.error(f"Error identifying tradeoffs: {e}")
@@ -343,7 +344,7 @@ class AnalysisAgent:
                 best_budget=sorted_products[0].get("asin", "unknown") if sorted_products else "unknown",
                 best_value=sorted_products[len(sorted_products)//2].get("asin", "unknown") if sorted_products else "unknown",
                 best_premium=sorted_products[-1].get("asin", "unknown") if sorted_products else "unknown"
-            )
+            ), token_usage
     
     def detect_red_flags(
         self,
@@ -566,9 +567,15 @@ def analyze_products(state: AgentState) -> AgentState:
             "min_rating": requirements.get("min_rating")
         }
         
+        # Token accumulator for all LLM calls
+        total_input_tokens = 0
+        total_output_tokens = 0
+        
         # Step 1: Compare products with reasoning
         logger.info("Step 1: Comparing products with chain-of-thought")
-        comparison = agent.compare_products_cot(products, user_needs)
+        comparison, comp_tokens = agent.compare_products_cot(products, user_needs)
+        total_input_tokens += comp_tokens.get("input_tokens", 0)
+        total_output_tokens += comp_tokens.get("output_tokens", 0)
         
         # Step 2: Calculate value scores for top products
         logger.info("Step 2: Calculating value scores with reasoning")
@@ -580,7 +587,9 @@ def analyze_products(state: AgentState) -> AgentState:
         
         for product in top_products:
             # Calculate base score with reasoning
-            score = agent.calculate_value_score_reasoning(product, user_needs)
+            score, score_tokens = agent.calculate_value_score_reasoning(product, user_needs)
+            total_input_tokens += score_tokens.get("input_tokens", 0)
+            total_output_tokens += score_tokens.get("output_tokens", 0)
             
             # Skip if score calculation failed
             if score is None:
@@ -615,19 +624,27 @@ def analyze_products(state: AgentState) -> AgentState:
         top_product = products[0]  # Assuming first is best from collection
         alternatives = products[1:4]  # Next 3 as alternatives
         
-        recommendation = agent.explain_recommendation(
+        recommendation, rec_tokens = agent.explain_recommendation(
             top_product,
             user_needs,
             alternatives
         )
+        total_input_tokens += rec_tokens.get("input_tokens", 0)
+        total_output_tokens += rec_tokens.get("output_tokens", 0)
         
         # Step 4: Identify tradeoffs
         logger.info("Step 4: Analyzing tradeoffs")
-        tradeoffs = agent.identify_tradeoffs(products, user_needs)
+        tradeoffs, tradeoff_tokens = agent.identify_tradeoffs(products, user_needs)
+        total_input_tokens += tradeoff_tokens.get("input_tokens", 0)
+        total_output_tokens += tradeoff_tokens.get("output_tokens", 0)
         
-        # Step 5: Detect red flags
+        # Step 5: Detect red flags (no LLM structured output, tokens tracked internally)
         logger.info("Step 5: Detecting red flags")
         red_flags = agent.detect_red_flags(products)
+        
+        # Log total token usage
+        total_tokens = total_input_tokens + total_output_tokens
+        logger.info(f"Analysis Agent total tokens: {total_input_tokens} in + {total_output_tokens} out = {total_tokens} total")
         
         # Aggregate intelligence data from state (parallel execution results)
         review_analysis = state.get("review_analysis")
@@ -694,8 +711,9 @@ def analyze_products(state: AgentState) -> AgentState:
         logger.info(f"Confidence: {confidence_val:.2f}")
         logger.info(f"Red flags found: {len(red_flags)}")
         
-        # Complete step with success
+        # Complete step with actual accumulated token usage
         if trace_id and step:
+            total_all = total_input_tokens + total_output_tokens
             trace_manager.complete_step(
                 trace_id=trace_id,
                 step_id=step.step_id,
@@ -707,8 +725,9 @@ def analyze_products(state: AgentState) -> AgentState:
                     "value_scores_count": len(value_scores)
                 },
                 token_usage=TokenUsage(
-                    prompt_tokens=len(str(products)) // 4,  # Estimate
-                    completion_tokens=500  # Estimate for analysis
+                    prompt_tokens=total_input_tokens,
+                    completion_tokens=total_output_tokens,
+                    total_tokens=total_all
                 )
             )
         

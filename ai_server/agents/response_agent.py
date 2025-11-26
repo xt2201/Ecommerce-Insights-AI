@@ -23,6 +23,7 @@ from ai_server.schemas.response_models import (
 )
 from ai_server.utils.prompt_loader import load_prompt
 from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
+from ai_server.utils.token_counter import extract_token_usage
 from ai_server.utils.logger import get_agent_logger
 
 logger = get_agent_logger()
@@ -66,11 +67,20 @@ class ResponseAgent:
         
         return prompts
     
+    def _extract_token_usage(self, raw_response) -> dict:
+        """Extract token usage from LLM response."""
+        tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
+            tokens["input_tokens"] = raw_response.usage_metadata.get("input_tokens", 0)
+            tokens["output_tokens"] = raw_response.usage_metadata.get("output_tokens", 0)
+            tokens["total_tokens"] = tokens["input_tokens"] + tokens["output_tokens"]
+        return tokens
+    
     def generate_executive_summary(
         self,
         analysis_result: Dict[str, Any],
         user_query: str
-    ) -> ExecutiveSummary:
+    ) -> tuple[ExecutiveSummary, Dict[str, int]]:
         """Generate concise executive summary.
         
         Args:
@@ -78,8 +88,10 @@ class ResponseAgent:
             user_query: Original user query
             
         Returns:
-            ExecutiveSummary
+            Tuple of (ExecutiveSummary, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(ExecutiveSummary, include_raw=True)
             
@@ -98,14 +110,12 @@ class ResponseAgent:
             summary = result["parsed"]
             raw_response = result["raw"]
             
-            # Extract and log token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"generate_executive_summary tokens: {input_tokens} input + {output_tokens} output = {input_tokens + output_tokens} total")
+            # Extract token usage
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"generate_executive_summary tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out = {token_usage['total_tokens']} total")
             
             logger.info("Executive summary generated")
-            return summary
+            return summary, token_usage
             
         except Exception as e:
             logger.error(f"Error generating executive summary: {e}")
@@ -119,7 +129,7 @@ class ResponseAgent:
                 key_reason="Best match based on requirements",
                 market_overview="Multiple options available at various price points",
                 confidence_statement="Moderate confidence in recommendation"
-            )
+            ), token_usage
     
     def create_recommendation_details(
         self,
@@ -260,15 +270,17 @@ class ResponseAgent:
     def create_reasoning_summary(
         self,
         analysis_result: Dict[str, Any]
-    ) -> ReasoningSummary:
+    ) -> tuple[ReasoningSummary, Dict[str, int]]:
         """Create summary explaining analysis methodology.
         
         Args:
             analysis_result: Complete analysis result
             
         Returns:
-            ReasoningSummary
+            Tuple of (ReasoningSummary, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(ReasoningSummary, include_raw=True)
             
@@ -294,14 +306,12 @@ class ResponseAgent:
             summary = result["parsed"]
             raw_response = result["raw"]
             
-            # Extract and log token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"create_reasoning_summary tokens: {input_tokens} input + {output_tokens} output = {input_tokens + output_tokens} total")
+            # Extract token usage
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"create_reasoning_summary tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out = {token_usage['total_tokens']} total")
             
             logger.info("Reasoning summary generated")
-            return summary
+            return summary, token_usage
             
         except Exception as e:
             logger.error(f"Error creating reasoning summary: {e}")
@@ -318,7 +328,7 @@ class ResponseAgent:
                 key_factors=["Price", "Rating", "Reviews", "Features", "Value"],
                 confidence_assessment=f"Confidence level is {conf_level} based on data quality and analysis completeness.",
                 confidence_level=conf_level
-            )
+            ), token_usage
     
     def generate_follow_up_suggestions(
         self,
@@ -334,8 +344,10 @@ class ResponseAgent:
             alternatives: Alternative products
             
         Returns:
-            FollowUpSuggestions
+            Tuple of (FollowUpSuggestions, token_usage dict)
         """
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(FollowUpSuggestions, include_raw=True)
             
@@ -355,14 +367,12 @@ class ResponseAgent:
             suggestions = result["parsed"]
             raw_response = result["raw"]
             
-            # Extract and log token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"generate_follow_up_suggestions tokens: {input_tokens} input + {output_tokens} output = {input_tokens + output_tokens} total")
+            # Extract token usage
+            token_usage = extract_token_usage(raw_response)
+            logger.info(f"generate_follow_up_suggestions tokens: {token_usage['input_tokens']} in + {token_usage['output_tokens']} out = {token_usage['total_tokens']} total")
             
             logger.info(f"Generated {len(suggestions.suggestions)} follow-up suggestions")
-            return suggestions
+            return suggestions, token_usage
             
         except Exception as e:
             logger.error(f"Error generating follow-up suggestions: {e}")
@@ -387,7 +397,7 @@ class ResponseAgent:
                     )
                 ],
                 priority_suggestion="Consider reviewing customer feedback on the top recommendation"
-            )
+            ), token_usage
     
     def create_red_flags_summary(
         self,
@@ -434,7 +444,7 @@ class ResponseAgent:
         self,
         analysis_result: Dict[str, Any],
         user_query: str
-    ) -> FinalResponse:
+    ) -> tuple[FinalResponse, dict]:
         """Generate comprehensive response in a single LLM call.
         
         Args:
@@ -442,8 +452,10 @@ class ResponseAgent:
             user_query: Original user query
             
         Returns:
-            FinalResponse object
+            Tuple of (FinalResponse object, token_dict)
         """
+        tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        
         try:
             structured_llm = self.llm.with_structured_output(FinalResponse, include_raw=True)
             
@@ -464,13 +476,11 @@ class ResponseAgent:
             response = result["parsed"]
             raw_response = result["raw"]
             
-            # Extract and log token usage
-            if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
-                input_tokens = raw_response.usage_metadata.get("input_tokens", 0)
-                output_tokens = raw_response.usage_metadata.get("output_tokens", 0)
-                logger.info(f"generate_comprehensive_response tokens: {input_tokens} input + {output_tokens} output = {input_tokens + output_tokens} total")
+            # Extract token usage
+            tokens = self._extract_token_usage(raw_response)
+            logger.info(f"generate_comprehensive_response tokens: {tokens['input_tokens']} input + {tokens['output_tokens']} output = {tokens['total_tokens']} total")
             
-            return response
+            return response, tokens
             
         except Exception as e:
             logger.error(f"Error generating comprehensive response: {e}")
@@ -564,7 +574,7 @@ class ResponseAgent:
                 reasoning_summary=reasoning,
                 follow_up_suggestions=suggestions,
                 red_flags=red_flags
-            )
+            ), tokens  # Return tokens (will be zeros for fallback)
 
     def format_final_response(
         self,
@@ -752,7 +762,7 @@ def generate_response(state: AgentState) -> AgentState:
         logger.info("Generating comprehensive response (Optimized Single Call)...")
         
         # Generate comprehensive response in one go
-        final_response = agent.generate_comprehensive_response(analysis_result, user_query)
+        final_response, total_tokens = agent.generate_comprehensive_response(analysis_result, user_query)
         
         # Format as markdown
         logger.info("Formatting final response")
@@ -767,7 +777,7 @@ def generate_response(state: AgentState) -> AgentState:
             success=True,
             final_response=final_response,
             generation_time=generation_time,
-            tokens_used=0,  # Would need to track from LLM calls
+            tokens_used=total_tokens.get("total_tokens", 0),
             errors=[]
         )
         
@@ -778,9 +788,11 @@ def generate_response(state: AgentState) -> AgentState:
         
         logger.info(f"Response generation complete in {generation_time:.2f}s")
         logger.info(f"Response length: {len(formatted_response)} characters")
+        logger.info(f"Total tokens used: {total_tokens}")
         
-        # Complete step with success
+        # Complete step with success and actual token usage
         if trace_id and step:
+            total = total_tokens.get("total_tokens", 0)
             trace_manager.complete_step(
                 trace_id=trace_id,
                 step_id=step.step_id,
@@ -791,8 +803,9 @@ def generate_response(state: AgentState) -> AgentState:
                     "success": True
                 },
                 token_usage=TokenUsage(
-                    prompt_tokens=len(str(analysis_result)) // 4,  # Estimate
-                    completion_tokens=len(formatted_response) // 4  # Estimate
+                    prompt_tokens=total_tokens.get("input_tokens", 0),
+                    completion_tokens=total_tokens.get("output_tokens", 0),
+                    total_tokens=total
                 )
             )
         
