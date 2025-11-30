@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from ai_server.schemas.agent_state import AgentState, SearchPlan
 from ai_server.schemas.memory_models import ConversationTurn, SessionState
+from ai_server.memory.context_manager import get_context_manager
 
 
 class ConversationMemory:
@@ -39,19 +40,35 @@ class ConversationMemory:
         )
         
         session.add_turn(turn)
+        
+        # Update Context Manager (Vector DB + Summary)
+        try:
+            get_context_manager().add_turn(session, turn)
+        except Exception as e:
+            # Don't fail the request if memory update fails
+            print(f"Failed to update context manager: {e}")
     
     @staticmethod
-    def get_context_for_state(session: SessionState, max_turns: int = 5) -> Dict[str, any]:
+    def get_context_for_state(session: SessionState, max_turns: int = 5, current_query: Optional[str] = None) -> Dict[str, any]:
         """Extract context from session for agent state.
         
         Args:
             session: Session to extract context from
             max_turns: Maximum number of recent turns to include
+            current_query: Current user query (for semantic retrieval)
             
         Returns:
             Dictionary with context information
         """
         recent_turns = session.conversation_history.get_recent_turns(max_turns)
+        
+        # Semantic Retrieval
+        relevant_history = []
+        if current_query:
+            try:
+                relevant_history = get_context_manager().get_semantic_context(session.session_id, current_query)
+            except Exception as e:
+                print(f"Failed to retrieve semantic context: {e}")
         
         return {
             "previous_queries": [turn.user_query for turn in recent_turns],
@@ -60,7 +77,8 @@ class ConversationMemory:
                 for turn in recent_turns 
                 if turn.top_recommendation
             ],
-            "conversation_summary": ConversationMemory._summarize_conversation(recent_turns),
+            "conversation_summary": session.context_summary or ConversationMemory._summarize_conversation(recent_turns),
+            "relevant_history": relevant_history,
         }
     
     @staticmethod

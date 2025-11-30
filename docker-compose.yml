@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   backend:
@@ -27,13 +27,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-      args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8000
+
     container_name: ecom-frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
       - NODE_ENV=production
     depends_on:
       backend:

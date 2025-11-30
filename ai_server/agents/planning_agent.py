@@ -13,8 +13,10 @@ from ai_server.tools.planning_tools import (
     analyze_query_intent,
     expand_keywords,
     extract_requirements,
+    extract_requirements,
     generate_comprehensive_plan_with_tokens,
 )
+from ai_server.tools.product_tools import check_local_products
 from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
 
 # Initialize preference extractor (reused across calls)
@@ -52,10 +54,50 @@ def plan_search(state: AgentState) -> AgentState:
         )
     
     try:
+        # PHASE 2 MEMORY: Check local product store first
+        # Only check if this is NOT a retry (retries imply we want new results)
+        retry_count = state.get("retry_count", 0)
+        if retry_count == 0:
+            local_products = check_local_products(query)
+            if local_products:
+                debug_notes.append(f"Planning: Found {len(local_products)} products in local memory.")
+                
+                # If we found enough products, we can skip the search
+                # For now, let's say 3 is enough to skip
+                if len(local_products) >= 3:
+                    state["products"] = local_products
+                    state["products_count"] = len(local_products)
+                    state["search_status"] = "success"
+                    state["search_plan"] = {
+                        "keywords": [query],
+                        "amazon_domain": "amazon.com",
+                        "max_price": None,
+                        "engines": [], # Empty engines = no search
+                        "asin_focus_list": [],
+                        "notes": "Retrieved from local memory"
+                    }
+                    state["debug_notes"] = debug_notes
+                    return state
+
         # Single comprehensive analysis step
         debug_notes.append("Planning: Generating comprehensive plan...")
         
         # Use the version that returns tokens for tracking
+        # PHASE 1 LOOP: Check for retry
+        retry_count = state.get("retry_count", 0)
+        search_status = state.get("search_status", "")
+        
+        if search_status in ["fail", "partial"] and retry_count < 3:
+            debug_notes.append(f"Planning: Retry #{retry_count + 1} triggered (Status: {search_status})")
+            
+            # Increment retry count
+            state["retry_count"] = retry_count + 1
+            
+            # Broaden search strategy
+            # We append a directive to the query to guide the LLM
+            query = f"{query} (IGNORE PREVIOUS CONSTRAINTS. SEARCH BROADLY. FIND ANY MATCHING PRODUCTS.)"
+            debug_notes.append("Planning: Broadening search scope...")
+            
         plan_result, total_tokens = generate_comprehensive_plan_with_tokens(query)
         
         # Extract components
@@ -182,3 +224,17 @@ def plan_search(state: AgentState) -> AgentState:
         state["debug_notes"] = debug_notes
     
     return state
+
+
+def _fallback_plan(query: str) -> Dict:
+    """Generate a simple fallback plan."""
+    return {
+        "keywords": [query],
+        "amazon_domain": "amazon.com",
+        "max_price": None,
+        "engines": ["amazon"],
+        "asin_focus_list": [],
+        "notes": "Fallback plan due to error",
+        "requirements": {},
+        "intent": {"intent": "product_search", "specificity": 0.5, "confidence": 0.5}
+    }

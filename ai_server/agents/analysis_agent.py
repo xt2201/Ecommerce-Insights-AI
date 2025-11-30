@@ -5,6 +5,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.types import interrupt
 
 from ai_server.llm.llm_factory import get_llm
 from ai_server.schemas.agent_state import AgentState
@@ -710,6 +711,24 @@ def analyze_products(state: AgentState) -> AgentState:
         confidence_val = analysis_result.confidence if analysis_result.confidence is not None else 0.0
         logger.info(f"Confidence: {confidence_val:.2f}")
         logger.info(f"Red flags found: {len(red_flags)}")
+        
+        # PHASE 2 HITL: Analysis Verification
+        # If confidence is low (< 0.5), ask user to verify
+        if confidence_val < 0.5:
+            logger.info(f"Low confidence ({confidence_val:.2f}). Triggering HITL.")
+            verification_msg = (
+                f"I've analyzed the products, but I'm only {confidence_val:.0%} confident in this recommendation. "
+                f"The top pick is {top_product.get('title', 'unknown')}. "
+                f"Do you want me to proceed with this, or should I look for something else?"
+            )
+            
+            user_feedback = interrupt(verification_msg)
+            
+            if user_feedback:
+                logger.info(f"Resumed with analysis feedback: {user_feedback}")
+                state["analysis_feedback"] = user_feedback
+                # If user says "look for X", ideally we would loop back.
+                # For now, we pass this to ResponseAgent which can suggest a new search.
         
         # Complete step with actual accumulated token usage
         if trace_id and step:

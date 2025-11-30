@@ -1,0 +1,37 @@
+{
+  "B0FGG71BRD": {
+    "recommendation": "Buy Now",
+    "confidence": 0.8,
+    "price_status": "Good Deal",
+    "savings_percentage": 2.56,
+    "reasoning": "The current price is below the average price and near the lowest recent price, indicating a good deal."
+  },
+  "B0FPCGMXJB": {
+    "recommendation": "Buy Now",
+    "confidence": 0.8,
+    "price_status": "Good Deal",
+    "savings_percentage": 0.03,
+    "reasoning": "The current price is below the average price and near the lowest recent price, indicating a good deal."
+  },
+  "B0CQXMXJC5": {
+    "recommendation": "Wait",
+    "confidence": 0.6,
+    "price_status": "Fair Price",
+    "savings_percentage": 3.55,
+    "reasoning": "The current price is slightly above the average price and not near the lowest recorded price."
+  },
+  "B0C3HCD34R": {
+    "recommendation": "Buy Now",
+    "confidence": 0.8,
+    "price_status": "Good Deal",
+    "savings_percentage": 2.26,
+    "reasoning": "The current price is below the average price and near the lowest recent price, indicating a good deal."
+  },
+  "B0BS74M665": {
+    "recommendation": "Buy Now",
+    "confidence": 0.8,
+    "price_status": "Good Deal",
+    "savings_percentage": 2.02,
+    "reasoning": "The current price is below the average price and near the lowest recent price, indicating a good deal."
+  }
+}

@@ -44,6 +44,10 @@ class AgentState(TypedDict, total=False):
     reviews_data: Dict[str, Any]  # Detailed review analysis
     market_data: Dict[str, Any]   # Market intelligence data
     price_history: Dict[str, Any] # Historical price data
+    
+    # Phase 1: Reflection Loop
+    search_status: str  # "success" | "partial" | "fail"
+    retry_count: int    # Number of retries attempted
 
     
     # Phase 2 additions

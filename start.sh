@@ -137,21 +137,9 @@ fi
 print_success ".env file found"
 echo ""
 
-# Step 1: Stop and remove old containers
-print_step "Stopping and removing old containers..."
-docker-compose down --remove-orphans 2>/dev/null || true
-print_success "Old containers removed"
-echo ""
-
-# Step 2: Build images
-print_step "Building Docker images (this may take a few minutes)..."
-docker-compose build --no-cache
-print_success "Images built successfully"
-echo ""
-
-# Step 3: Start services
-print_step "Starting services in detached mode..."
-docker-compose up -d
+# Step 1: Build and Start services
+print_step "Building and starting services..."
+docker compose up -d --build
 print_success "Services started"
 echo ""
 
@@ -162,13 +150,13 @@ sleep 5
 # Check backend health
 print_step "Checking backend health..."
 for i in {1..30}; do
-    if docker-compose exec -T backend python -c "import requests; requests.get('http://localhost:8000/health')" 2>/dev/null; then
+    if docker compose exec -T backend python -c "import requests; requests.get('http://localhost:8000/health')" 2>/dev/null; then
         print_success "Backend is healthy"
         break
     fi
     if [ $i -eq 30 ]; then
         print_error "Backend health check timeout"
-        docker-compose logs backend
+        docker compose logs backend
         exit 1
     fi
     sleep 2
@@ -183,7 +171,7 @@ for i in {1..30}; do
     fi
     if [ $i -eq 30 ]; then
         print_error "Frontend health check timeout"
-        docker-compose logs frontend
+        docker compose logs frontend
         exit 1
     fi
     sleep 2
@@ -195,10 +183,10 @@ print_success "All services are up and running!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📊 Service Status:"
-docker-compose ps
+docker compose ps
 echo ""
 
-# Extract actual ports from docker-compose.yml
+# Extract actual ports from docker compose.yml
 FRONTEND_PORT=$(grep -A 5 "frontend:" docker-compose.yml | grep "ports:" -A 1 | grep -oP '"\K[0-9]+(?=:)' | head -1)
 BACKEND_PORT=$(grep -A 5 "backend:" docker-compose.yml | grep "ports:" -A 1 | grep -oP '"\K[0-9]+(?=:)' | head -1)
 
@@ -212,10 +200,10 @@ echo "   Backend:  ${GREEN}http://localhost:${BACKEND_PORT}${NC}"
 echo "   API Docs: ${GREEN}http://localhost:${BACKEND_PORT}/docs${NC}"
 echo ""
 echo "📝 Useful commands:"
-echo "   View logs:        docker-compose logs -f"
-echo "   View backend:     docker-compose logs -f backend"
-echo "   View frontend:    docker-compose logs -f frontend"
-echo "   Stop services:    docker-compose down"
-echo "   Restart:          docker-compose restart"
+echo "   View logs:        docker compose logs -f"
+echo "   View backend:     docker compose logs -f backend"
+echo "   View frontend:    docker compose logs -f frontend"
+echo "   Stop services:    docker compose down"
+echo "   Restart:          docker compose restart"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

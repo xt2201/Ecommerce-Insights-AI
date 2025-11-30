@@ -5,20 +5,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  searchProducts,
   getSessions,
   getSessionDetail,
   deleteSession,
-  getGlobalTokenStats,
-  getSessionTokenStats,
-  getGraphTraces,
   createSession,
-  type ShoppingRequest,
-  type ShoppingResponse,
   type SessionsResponse,
-  type SessionDetail,
-  type TokenStatsResponse,
-  type GraphTracesResponse,
   APIError,
 } from '@/lib/api';
 
@@ -105,70 +96,6 @@ export function useSession() {
 }
 
 // ============================================================================
-// Shopping Search Hook
-// ============================================================================
-
-export function useSearch() {
-  const { sessionId, isLoading: sessionLoading } = useSession();
-  const [data, setData] = useState<ShoppingResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<APIError | Error | null>(null);
-
-  const search = useCallback(
-    async (query: string, preferences?: Record<string, unknown>) => {
-      // If we have sessionId, proceed even if sessionLoading is true
-      // This handles the case where session is already restored from localStorage
-      if (!sessionId) {
-        if (sessionLoading) {
-          console.warn('⏳ Session still loading, please wait...');
-          setError(new Error('Session is still initializing. Please try again in a moment.'));
-          return;
-        } else {
-          console.error('❌ No session ID available after initialization');
-          setError(new Error('No session ID available. Please refresh the page.'));
-          return;
-        }
-      }
-
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        console.log('🔍 Searching with session:', sessionId);
-        const request: ShoppingRequest = {
-          query,
-          session_id: sessionId,
-          user_preferences: preferences,
-        };
-        const response = await searchProducts(request);
-        setData(response);
-        console.log('✅ Search completed successfully');
-      } catch (err) {
-        console.error('❌ Search failed:', err);
-        setError(err instanceof Error ? err : new Error('Unknown error'));
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [sessionId, sessionLoading]
-  );
-
-  const reset = useCallback(() => {
-    setData(null);
-    setError(null);
-  }, []);
-
-  return {
-    data,
-    isLoading: isLoading || sessionLoading, // Include session loading state
-    error,
-    search,
-    reset,
-    sessionId, // Expose sessionId for debugging
-  };
-}
-
-// ============================================================================
 // Sessions List Hook
 // ============================================================================
 
@@ -214,120 +141,5 @@ export function useSessions() {
     error,
     refresh: fetch,
     remove,
-  };
-}
-
-// ============================================================================
-// Session Detail Hook
-// ============================================================================
-
-export function useSessionDetail(sessionId: string | null) {
-  const [data, setData] = useState<SessionDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<APIError | Error | null>(null);
-
-  useEffect(() => {
-    if (!sessionId) {
-      setData(null);
-      return;
-    }
-
-    const fetch = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const response = await getSessionDetail(sessionId);
-        setData(response);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Unknown error'));
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetch();
-  }, [sessionId]);
-
-  return {
-    data,
-    isLoading,
-    error,
-  };
-}
-
-// ============================================================================
-// Token Stats Hook
-// ============================================================================
-
-export function useTokenStats(sessionId?: string) {
-  const [data, setData] = useState<TokenStatsResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<APIError | Error | null>(null);
-
-  const fetch = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = sessionId
-        ? await getSessionTokenStats(sessionId)
-        : await getGlobalTokenStats();
-      setData(response);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('Unknown error'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sessionId]);
-
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
-
-  return {
-    data,
-    isLoading,
-    error,
-    refresh: fetch,
-  };
-}
-
-// ============================================================================
-// Graph Traces Hook (Debug)
-// ============================================================================
-
-export function useGraphTraces(sessionId: string | null) {
-  const [data, setData] = useState<GraphTracesResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<APIError | Error | null>(null);
-
-  useEffect(() => {
-    if (!sessionId) {
-      setData(null);
-      return;
-    }
-
-    const fetch = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const response = await getGraphTraces(sessionId);
-        setData(response);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Unknown error'));
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetch();
-  }, [sessionId]);
-
-  return {
-    data,
-    isLoading,
-    error,
   };
 }

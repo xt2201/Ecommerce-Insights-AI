@@ -1,7 +1,7 @@
 # Agent Output Models for Planning Agent
 
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 
 class QueryIntentAnalysis(BaseModel):
@@ -12,6 +12,10 @@ class QueryIntentAnalysis(BaseModel):
     )
     specificity: float = Field(...,
         description="How specific the query is (0=vague, 1=very specific)"
+    )
+    route: Literal["direct_search", "planning", "chitchat", "faq", "advisory", "clarification", "feedback"] = Field(
+        ..., 
+        description="The classification of the user's query."
     )
     requires_clarification: bool = Field(...,
         description="Whether query needs clarification"
@@ -60,8 +64,8 @@ class QueryRequirements(BaseModel):
 class QueryClassification(BaseModel):
     """Query classification for routing."""
     
-    route: str = Field(...,
-        description="Route: simple, standard, complex, or clarification"
+    route: Literal["planning", "direct_search", "clarification", "chitchat", "faq", "advisory", "feedback"] = Field(...,
+        description="Route: planning, direct_search, clarification, chitchat, faq, advisory, or feedback"
     )
     confidence: float = Field(...,
         description="Confidence in this classification (0.0 to 1.0)"

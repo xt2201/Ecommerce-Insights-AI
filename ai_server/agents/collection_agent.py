@@ -8,8 +8,18 @@ from typing import Dict, Any
 from ai_server.clients.serpapi import SerpAPIClient
 from ai_server.schemas.agent_state import AgentState
 from ai_server.core.trace import get_trace_manager, StepType
+from ai_server.memory.storage.product_store import ProductStore
 
 logger = logging.getLogger(__name__)
+
+# Initialize product store (lazy load)
+_product_store = None
+
+def _get_product_store() -> ProductStore:
+    global _product_store
+    if _product_store is None:
+        _product_store = ProductStore()
+    return _product_store
 
 
 def collect_products(state: AgentState) -> AgentState:
@@ -108,6 +118,17 @@ def collect_products(state: AgentState) -> AgentState:
         
         logger.info(f"Found {len(products)} products")
         
+        # PHASE 2 MEMORY: Save to Product Store
+        try:
+            store = _get_product_store()
+            saved_count = 0
+            for p in products:
+                if store.save_product(p):
+                    saved_count += 1
+            logger.info(f"Saved {saved_count} products to persistent store")
+        except Exception as e:
+            logger.error(f"Failed to save products to store: {e}")
+        
         # --- PHASE 1 UPGRADE: Multi-Tool Collection ---
         # If search plan requests deep dive (e.g., for reviews or offers), fetch for top products
         
@@ -178,6 +199,16 @@ def collect_products(state: AgentState) -> AgentState:
     # Update state with results
     state["products"] = products
     state["products_count"] = len(products)
+    
+    # Determine search status
+    if len(products) == 0:
+        state["search_status"] = "fail"
+    elif len(products) < 3:
+        state["search_status"] = "partial"
+    else:
+        state["search_status"] = "success"
+        
+    logger.info(f"Collection status: {state['search_status']} (Count: {len(products)})")
     
     # Store deep dive data
     if reviews_data:

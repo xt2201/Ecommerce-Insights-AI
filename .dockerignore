@@ -13,7 +13,7 @@ venv/
 ENV/
 
 # Node
-node_modules/
+**/node_modules
 .next/
 .nuxt/
 npm-debug.log*

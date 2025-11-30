@@ -179,3 +179,17 @@ class SQLiteStorage(StorageBackend):
     def count_active_sessions(self) -> int:
         """Count active sessions (alias for count_total_sessions)."""
         return self.count_total_sessions()
+
+    def clear_all_sessions(self) -> int:
+        """Clear all sessions (mark as inactive).
+        
+        Returns:
+            Number of sessions cleared
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                UPDATE sessions SET is_active = 0 
+                WHERE is_active = 1
+            """)
+            conn.commit()
+            return cursor.rowcount

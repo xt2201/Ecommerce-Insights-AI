@@ -11,43 +11,56 @@ Chat History:
 {chat_history}
 
 Classification routes:
-1. **simple**: Specific product name or ASIN
-   - Examples: "AirPods Pro", "iPhone 15", "Sony WH-1000XM5"
-   - Characteristics: Brand + model name, very specific
+1. **direct_search**: Specific product name or ASIN
+   - Examples: "AirPods Pro", "iPhone 15", "Sony WH-1000XM5", "Samsung S24 Ultra"
+   - Characteristics: Brand + model name, very specific. NO constraints needed.
    - Action: Use quick search (skip planning)
 
-2. **standard**: Normal product category search or price check
-   - Examples: "wireless earbuds", "laptop", "running shoes", "price of iPhone 15", "track price for Sony headphones"
-   - Characteristics: Clear category or specific price intent
+2. **planning**: General product search or complex requirements
+   - Examples: "wireless earbuds under $100", "gaming laptop for valorant", "running shoes for flat feet", "cheap headphones"
+   - Characteristics: Category + constraints (price, usage, feature). 
    - Action: Use full planning workflow
 
-3. **complex**: Multiple requirements and constraints or deep analysis
-   - Examples: "wireless earbuds under $100 with ANC and 20+ hour battery", "analyze reviews for X and check price history"
-   - Characteristics: Multiple filters, specific requirements, multi-step analysis
-   - Action: Use full planning workflow with detailed analysis
+3. **chitchat**: Casual conversation or greeting
+   - Examples: "Hello", "How are you?", "Good morning", "Who are you?"
+   - Characteristics: Social interaction, no shopping intent yet
+   - Action: Respond with chitchat agent
 
-4. **clarification**: Too vague or ambiguous
-   - Examples: "something good", "nice product", "I need something"
-   - Characteristics: No clear product category, unclear intent
-   - Action: Request clarification from user
+4. **faq**: Policy questions (shipping, returns, payment, support)
+   - Examples: "What is your return policy?", "Do you offer free shipping?", "How can I contact support?"
+   - Characteristics: Questions about the service/platform, not products
+   - Action: Respond with FAQ agent
 
-Assessment criteria:
-- Specificity: How specific is the product description?
-- Constraints: How many requirements are mentioned?
-- Clarity: Is the intent clear?
-- Complexity: How complex is the search likely to be?
-- Context: Is this a follow-up to the previous conversation? (e.g., "how about the second one?", "is it cheaper?", "compare them")
+5. **advisory**: The user is asking for expert advice, consultation, or help deciding what to buy (e.g., "What should I look for in a gaming laptop?", "Is OLED better than QLED?").
+6. **feedback**: The user is providing a critique, correction, or feedback on previous results (e.g., "That's too expensive", "I don't like those brands", "Show me something else", "cheaper", "better battery").
+
+7. **clarification**: The user's query is too broad, ambiguous, or lacks sufficient detail to perform a good search.
+   - Examples: "tai nghe" (headphones), "laptop", "giày" (shoes), "điện thoại" (phone)
+   - Characteristics: Single word or very broad category without any constraints (price, brand, type, usage).
+   - Action: Ask for clarification.
+
+**IMPORTANT - CHECK THIS FIRST:**
+Step 1: Is this a follow-up query?
+- If Chat History is NOT empty AND the current query is a refinement/comparison/constraint (e.g., "cheaper", "under $X", "what about Y?", "with better Z"), then set `is_followup=true`.
+- Examples:
+  * History: "Sony headphones" → Query: "cheaper options" → `is_followup=true`, route=`feedback`
+  * History: "gaming laptop" → Query: "under $1000" → `is_followup=true`, route=`feedback`
+  * History: "iPhone 15" → Query: "what about Samsung?" → `is_followup=true`, route=`feedback`
+
+Step 2: If NOT a follow-up, apply these criteria:
+- **Ambiguity Check**: If the query is just a broad category (e.g., "headphones") with NO other details, classify as `clarification`.
+- **Specific Product**: If it's a specific model (e.g., "Sony WH-1000XM5"), classify as `direct_search`.
 
 Return ONLY valid JSON (no markdown, no explanations):
 {{
-    "route": "standard",
-    "confidence": 0.9,
-    "reasoning": "Clear product category with no ambiguity. User wants wireless earbuds which is a well-defined product category.",
+    "route": "clarification",
+    "confidence": 0.95,
+    "reasoning": "User query 'tai nghe' is too broad. Needs details on type (in-ear/over-ear), budget, or usage.",
     "is_followup": false,
     "followup_reasoning": "No previous context referenced."
 }}
 
-Route options: "simple", "standard", "complex", or "clarification"
+Route options: "direct_search", "planning", "chitchat", "faq", "advisory", "clarification", "feedback"
 Confidence: 0.0-1.0 (how confident you are in this classification)
 is_followup: true/false (is this a follow-up query?)
 ```
@@ -66,9 +79,11 @@ Your job:
 
 Decision logic:
 - **simple**: Specific product name → Skip planning, go directly to search
-- **standard**: Normal category search → Use full planning workflow  
+- **standard**: Category + Constraints → Use full planning workflow  
 - **complex**: Multiple constraints → Use full planning with deep analysis
-- **clarification**: Too vague → Ask user for more details
+- **clarification**: Broad category ONLY (e.g., "headphones", "laptop") or ambiguous → Ask user for more details. DO NOT GUESS.
 
-Be decisive and confident in your classification. Your decision affects the entire workflow efficiency.
+**CRITICAL EXCEPTION**: If the query is a **follow-up** (e.g., "cheaper", "what about Sony?"), it relies on previous context. Classify as `feedback` or `planning`, NOT `clarification`. Context will resolve the ambiguity.
+
+Be decisive. If a query is too broad (like "tai nghe") AND NOT a follow-up, choose `clarification`.
 ```

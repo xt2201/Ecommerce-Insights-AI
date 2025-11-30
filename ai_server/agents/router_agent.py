@@ -11,7 +11,9 @@ from ai_server.schemas.output_models import ResponsePayload, AnalysisSnapshot
 from ai_server.memory.conversation_memory import ConversationMemory
 from ai_server.utils.prompt_loader import load_prompt
 from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
+from ai_server.core.trace import get_trace_manager, StepType, TokenUsage
 from ai_server.utils.token_counter import extract_token_usage
+from langgraph.types import interrupt
 
 
 # Load prompts
@@ -125,6 +127,11 @@ def router_node(state: AgentState) -> AgentState:
         # Get previous queries for context
         previous_queries = state.get("previous_queries", [])
         
+        # DEBUG: Log what we're passing to the LLM
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Router: previous_queries = {previous_queries}")
+        
         # Classify with history context
         classification, usage = classify_query(query, previous_queries)
         
@@ -136,23 +143,76 @@ def router_node(state: AgentState) -> AgentState:
             debug_notes.append(f"Router: Detected follow-up query (Reason: {classification.followup_reasoning})")
             # For follow-ups, extract reference context if available
             if previous_queries:
+                last_query = previous_queries[-1]
                 state["reference_context"] = {
-                    "last_query": previous_queries[-1] if previous_queries else None,
+                    "last_query": last_query,
                     "is_followup": True,
                     "context_reasoning": classification.followup_reasoning
                 }
+                # Rewrite query to include context for the planner
+                # This ensures the planner understands "cheaper" means "cheaper than [last_query]"
+                new_query = f"{query} (Context: Previous query was '{last_query}')"
+                state["user_query"] = new_query
+                debug_notes.append(f"Router: Rewrote query with context: {new_query}")
         
         debug_notes.append(
             f"Router: {classification.route} "
             f"(confidence={classification.confidence:.2f}) - {classification.reasoning}"
         )
         
+        # Log classification for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Router Classification: Route={classification.route}, "
+            f"Confidence={classification.confidence}, "
+            f"IsFollowup={is_followup}, "
+            f"Reason={classification.reasoning}"
+        )
+        
+        # PHASE 2 HITL: Low Confidence Check
+        # If confidence is low (< 0.7) and not already asking for clarification,
+        # interrupt to confirm intent.
+        if classification.confidence < 0.7 and classification.route != "clarification":
+            debug_notes.append(f"Router: Low confidence ({classification.confidence:.2f}). Triggering HITL.")
+            
+            clarification_msg = (
+                f"I'm not entirely sure I understood that. "
+                f"I think you want to '{classification.route}' regarding '{query}'. "
+                f"Is that correct? Or could you clarify?"
+            )
+            
+            # Interrupt
+            user_feedback = interrupt(clarification_msg)
+            
+            if user_feedback:
+                debug_notes.append(f"Router: Resumed with feedback: {user_feedback}")
+                # Append feedback to query and re-classify
+                # (Or we could trust the user's explicit direction if we parsed it, 
+                # but re-classifying with more context is safer)
+                query = f"{query} (Context: {user_feedback})"
+                state["user_query"] = query
+                
+                # Re-classify with updated query
+                classification, usage = classify_query(query, previous_queries)
+                debug_notes.append(f"Router: Re-classified as {classification.route} ({classification.confidence:.2f})")
+
         # Map routes
-        if classification.route == "simple":
+        # CRITICAL: If this is a follow-up, override clarification route
+        # Follow-ups like "cheaper" rely on context, not standalone clarity
+        if is_followup and classification.route == "clarification":
+            debug_notes.append(
+                f"Router: Overriding 'clarification' to 'planning' for follow-up query. "
+                f"Context will resolve ambiguity."
+            )
+            route_decision = "planning"
+        elif classification.route == "direct_search":
             route_decision = "direct_search"
         elif classification.route == "clarification":
             route_decision = "clarification"
-        else:  # standard or complex
+        elif classification.route in ["chitchat", "faq", "advisory", "feedback"]:
+            route_decision = classification.route
+        else:  # planning
             route_decision = "planning"
             
         # Update state
@@ -197,7 +257,7 @@ def router_node(state: AgentState) -> AgentState:
     return state
 
 
-def route_query(state: AgentState) -> Literal["planning", "direct_search", "clarification"]:
+def route_query(state: AgentState) -> Literal["planning", "direct_search", "clarification", "chitchat", "faq", "advisory"]:
     """Conditional edge function to select the next node based on state."""
     return state.get("route_decision", "planning")
 
@@ -258,5 +318,17 @@ def request_clarification_handler(state: AgentState) -> AgentState:
     debug_notes = state.get("debug_notes", [])
     debug_notes.append("Requesting clarification (vague query)")
     state["debug_notes"] = debug_notes
+    
+    # PHASE 3 HITL: Interrupt execution to wait for user input
+    # The value returned by interrupt() will be the user's input when resumed
+    user_answer = interrupt(clarification_message)
+    
+    # Update query with clarification
+    if user_answer:
+        original_query = state.get("user_query", "")
+        new_query = f"{original_query} (User Clarification: {user_answer})"
+        state["user_query"] = new_query
+        debug_notes.append(f"Resumed with clarification: {user_answer}")
+        state["debug_notes"] = debug_notes
     
     return state

@@ -141,28 +141,28 @@ You are generating helpful follow-up suggestions based on the analysis.
 {alternatives}
 
 **Instructions:**
-Generate 3-5 follow-up suggestions that help users:
+Generate 3-5 follow-up suggestions that are **phrased as user queries** (what the user would say to the AI).
 
-1. **Refinement Questions** (1-2 suggestions):
-   - Questions to narrow down selection further
-   - Example: "Would you like to see more budget-friendly options?"
-   - Example: "Are you interested in products with specific features like noise cancellation?"
+1. **Refinement Queries** (1-2 suggestions):
+   - Queries to narrow down selection
+   - Example: "Show me budget-friendly options under $500"
+   - Example: "Find laptops with better battery life"
 
 2. **Related Searches** (1-2 suggestions):
-   - Complementary products
-   - Example: "Looking for charging cases for these earbuds?"
-   - Example: "Need a carrying case?"
+   - Queries for complementary products
+   - Example: "Find compatible cases for this model"
+   - Example: "Show me top-rated gaming mice"
 
 3. **Alternative Scenarios** (1 suggestion):
-   - Different use cases or priorities
-   - Example: "Want to see best options if quality is more important than price?"
-   - Example: "Interested in comparing this to premium brands?"
+   - Queries for different priorities
+   - Example: "What are the best options for video editing instead?"
+   - Example: "Compare this with MacBook Pro"
 
 **Format:**
 Each suggestion should be:
-- A clear, actionable question or statement
-- Relevant to the user's original query
-- Easy to respond to with yes/no or simple answer
+- A clear, concise query string
+- Ready for the user to click and send
+- No "Would you like..." or "Do you want..." phrasing
 
 ## format_final_response
 

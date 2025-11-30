@@ -1,0 +1,5 @@
+{
+  "route_decision": "planning",
+  "confidence": 0.9,
+  "reasoning": "Clear product category with no ambiguity. User wants wireless earbuds which is a well-defined product category."
+}

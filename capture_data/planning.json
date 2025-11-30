@@ -1,0 +1,32 @@
+{
+  "keywords": [
+    "noise cancelling headphones",
+    "budget noise isolation",
+    "quiet office headphones",
+    "affordable noise reduction",
+    "wireless office headphones"
+  ],
+  "amazon_domain": "amazon.com",
+  "max_price": 300.0,
+  "engines": [
+    "amazon"
+  ],
+  "asin_focus_list": [],
+  "notes": "Intent: product_search | Specificity: 0.80 | Confidence: 0.95 | Features: noise cancellation, comfortable for long use, good battery life",
+  "requirements": {
+    "max_price": 300.0,
+    "min_rating": 4.0,
+    "required_features": [
+      "noise cancellation",
+      "comfortable for long use",
+      "good battery life"
+    ],
+    "brand_preferences": []
+  },
+  "intent": {
+    "intent": "product_search",
+    "specificity": 0.8,
+    "requires_clarification": false,
+    "confidence": 0.95
+  }
+}

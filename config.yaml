@@ -29,7 +29,7 @@ agents:
   # Prompts: ai_server/prompts/router_agent_prompts.md
   router:
     provider: "cerebras"
-    model_name: "llama3.1-8b"
+    model_name: "qwen-3-32b"
     temperature: 0.0
     max_tokens: 2000
   
@@ -157,3 +157,43 @@ memory:
     max_ttl: 86400  # Maximum session TTL: 24 hours
     cleanup_interval: 300  # Clean expired sessions every 5 minutes
 
+# ============================================================================
+# Vector Store Configuration
+# ============================================================================
+vector_store:
+  # Backend: faiss (recommended), chroma (legacy)
+  backend: "faiss"
+  
+  # FAISS configuration
+  faiss:
+    index_path: "data/faiss_index"
+    # Index type: flat (exact), ivf (approximate), hnsw (graph-based)
+    index_type: "flat"
+    # Metric: cosine, l2 (euclidean), ip (inner product)
+    metric: "cosine"
+    # Number of clusters for IVF index (only used if index_type=ivf)
+    nlist: 100
+    # Number of probes for IVF search (only used if index_type=ivf)
+    nprobe: 10
+
+# ============================================================================
+# Embedding Model Configuration
+# ============================================================================
+embeddings:
+  # Provider: huggingface, sentence_transformers, openai
+  provider: "huggingface"
+  
+  # Model configuration
+  model_name: "Qwen/Qwen3-Embedding-0.6B"
+  # Embedding dimension (Qwen3-Embedding-0.6B = 1024)
+  dimension: 1024
+  # Batch size for encoding
+  batch_size: 32
+  # Device: auto, cpu, cuda, mps
+  device: "auto"
+  # Trust remote code (required for some models)
+  trust_remote_code: true
+  # Normalize embeddings (recommended for cosine similarity)
+  normalize: true
+  # Max sequence length
+  max_length: 512

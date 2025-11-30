@@ -3,7 +3,7 @@
  * Typed fetch functions for all 11 backend endpoints
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 // ============================================================================
 // Types
@@ -44,6 +44,8 @@ export interface ShoppingResponse {
   alternatives?: Product[];
   total_results: number;
   search_metadata?: Record<string, unknown>;
+  red_flags?: string[];
+  follow_up_suggestions?: string[];
 }
 
 export interface SessionInfo {
@@ -102,6 +104,19 @@ export interface GraphTracesResponse {
   total_traces: number;
 }
 
+export type StreamEventType = 'start' | 'progress' | 'chunk' | 'interrupt' | 'complete' | 'error' | 'end';
+
+export interface StreamEvent {
+  type: StreamEventType;
+  session_id?: string;
+  step?: number;
+  node?: string;
+  message?: string;
+  content?: string;
+  thread_id?: string;
+  result?: any;
+}
+
 // ============================================================================
 // Error Handling
 // ============================================================================
@@ -139,27 +154,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
 // ============================================================================
 
 /**
- * POST /api/shopping
- * Main shopping search endpoint
- */
-export async function searchProducts(
-  request: ShoppingRequest
-): Promise<ShoppingResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/shopping`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  return handleResponse<ShoppingResponse>(response);
-}
-
-/**
  * POST /api/shopping/stream
  * Streaming search with real-time updates
  */
 export async function searchProductsStream(
   request: ShoppingRequest,
-  onChunk: (chunk: unknown) => void
+  onEvent: (event: StreamEvent) => void
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/shopping/stream`, {
     method: 'POST',
@@ -181,14 +181,14 @@ export async function searchProductsStream(
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value);
+      const chunk = decoder.decode(value, { stream: true });
       const lines = chunk.split('\n');
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
             const data = JSON.parse(line.slice(6));
-            onChunk(data);
+            onEvent(data as StreamEvent);
           } catch (e) {
             console.error('Failed to parse SSE chunk:', e);
           }
@@ -286,19 +286,6 @@ export async function getGlobalTokenStats(): Promise<TokenStatsResponse> {
 }
 
 /**
- * GET /api/monitoring/token-usage/{session_id}
- * Get token usage for specific session
- */
-export async function getSessionTokenStats(
-  sessionId: string
-): Promise<TokenStatsResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/monitoring/token-usage/${sessionId}`
-  );
-  return handleResponse<TokenStatsResponse>(response);
-}
-
-/**
  * POST /api/monitoring/token-usage/reset
  * Reset token usage statistics
  */
@@ -323,33 +310,4 @@ export async function healthCheck(): Promise<{
   return handleResponse<{ status: string; timestamp: string; version?: string }>(
     response
   );
-}
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-/**
- * Format price string to number
- */
-export function parsePrice(priceStr: string): number {
-  return parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
-}
-
-/**
- * Format token usage to cost
- */
-export function formatCost(tokens: number, pricePerMillion: number = 0.6): string {
-  const cost = (tokens / 1_000_000) * pricePerMillion;
-  return `$${cost.toFixed(4)}`;
-}
-
-/**
- * Session ID is now generated on the backend via POST /api/sessions
- * This function is deprecated and kept for backward compatibility only
- * @deprecated Use createSession() instead
- */
-export function generateSessionId(): string {
-  console.warn('⚠️ generateSessionId() is deprecated. Use createSession() instead.');
-  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }

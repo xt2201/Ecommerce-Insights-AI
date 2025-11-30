@@ -7,14 +7,16 @@ import { useState, useEffect } from 'react';
  * Provides real-time updates during AI search processing
  */
 
-export interface StreamEvent {
-  type: 'start' | 'progress' | 'chunk' | 'complete' | 'error' | 'end';
-  session_id?: string;
-  step?: number;
-  message?: string;
-  content?: string;
-  result?: unknown;
-}
+import type { ShoppingResponse } from '@/lib/api';
+
+export type StreamEvent =
+  | { type: 'start'; session_id: string }
+  | { type: 'progress'; step: number; node: string; message: string }
+  | { type: 'node_output'; node: string; output: any }
+  | { type: 'chunk'; content: string }
+  | { type: 'complete'; result: ShoppingResponse }
+  | { type: 'error'; message: string }
+  | { type: 'end' };
 
 export interface UseStreamingSearchOptions {
   onStart?: (sessionId: string) => void;
@@ -36,7 +38,7 @@ export function useStreamingSearch(options: UseStreamingSearchOptions = {}) {
     setEvents([]);
     setError(null);
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
     
     try {
       const response = await fetch(`${apiUrl}/api/shopping/stream`, {

@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Plus } from 'lucide-react';
-import Header from '@/components/Header';
-import SessionCard from '@/components/SessionCard';
+import { Plus, History, Trash2 } from 'lucide-react';
+import ChatLayout from '@/components/ChatLayout';
 import LoadingSpinner from '@/components/Loading';
 import { useRouter } from 'next/navigation';
 import { useSessions } from '@/hooks/useApi';
@@ -23,132 +22,141 @@ export default function SessionsPage() {
   };
 
   const handleCreateSession = () => {
-    // Navigate to home to start new session
     router.push('/');
   };
 
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="max-w-container mx-auto px-lg py-3xl">
-          <LoadingSpinner size="lg" text="Loading sessions..." />
-        </main>
-      </div>
-    );
-  }
+  const handleContinueSession = (sessionId: string) => {
+    router.push(`/?session=${sessionId}`);
+  };
 
-  // Show error state
-  if (error) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="max-w-container mx-auto px-lg py-3xl">
-          <div className="bg-destructive/10 border-2 border-destructive rounded-xl p-lg text-center">
-            <p className="text-destructive">{error.message}</p>
-            <button
-              onClick={() => refresh()}
-              className="mt-md px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('vi-VN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   const sessions = data?.sessions || [];
   const totalSessions = data?.total_sessions || 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
+    <ChatLayout>
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <History className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Chat History</h1>
+                <p className="text-sm text-muted-foreground">
+                  {totalSessions} conversations
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleCreateSession}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              New Chat
+            </button>
+          </div>
 
-      <main className="max-w-container mx-auto px-lg py-3xl">
-        {/* Page Header */}
-        <div className="mb-3xl">
-          <div className="flex items-center justify-between mb-md">
-            <div>
-              <h1 className="text-h2 text-foreground mb-sm">📚 Your Search Sessions</h1>
-              <p className="text-body text-muted">
-                View and manage your search history with AI memory
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-12">
+              <LoadingSpinner size="lg" text="Loading sessions..." />
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="bg-destructive/10 border border-destructive rounded-xl p-6 text-center">
+              <p className="text-destructive mb-4">{error.message}</p>
+              <button
+                onClick={() => refresh()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Sessions List */}
+          {!isLoading && !error && sessions.length > 0 && (
+            <div className="space-y-2">
+              {sessions.map((session) => {
+                const queries = Array.isArray(session.queries)
+                  ? session.queries.map((q: any) => typeof q === 'string' ? q : q.query || q)
+                  : [];
+                const firstQuery = queries[0] || 'New conversation';
+
+                return (
+                  <div
+                    key={session.session_id}
+                    className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-all cursor-pointer"
+                    onClick={() => handleContinueSession(session.session_id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground truncate">
+                        {firstQuery}
+                      </p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(session.created_at)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {queries.length} message{queries.length !== 1 ? 's' : ''}
+                        </span>
+                        {session.is_active !== false && (
+                          <span className="text-xs text-positive">● Active</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSession(session.session_id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-2 hover:bg-destructive/20 rounded-lg transition-all"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isLoading && !error && sessions.length === 0 && (
+            <div className="text-center py-12">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                <History className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <h2 className="text-xl font-semibold text-foreground mb-2">No conversations yet</h2>
+              <p className="text-muted-foreground mb-6">
+                Start a new chat to begin your shopping journey
               </p>
+              <button
+                onClick={handleCreateSession}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
+              >
+                <Plus className="w-5 h-5" />
+                Start a Chat
+              </button>
             </div>
-            <button
-              onClick={handleCreateSession}
-              className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-md"
-            >
-              <Plus className="w-5 h-5" />
-              New Session
-            </button>
-          </div>
+          )}
         </div>
-
-        {/* Sessions List */}
-        {sessions.length > 0 ? (
-          <div>
-            <p className="text-sm text-muted mb-md">
-              Showing {sessions.length} of {totalSessions} sessions
-            </p>
-            <div className="grid gap-lg">
-              {sessions.map((session) => (
-                <SessionCard
-                  key={session.session_id}
-                  sessionId={session.session_id}
-                  queries={Array.isArray(session.queries) 
-                    ? session.queries.map((q: any) => typeof q === 'string' ? q : q.query || q) 
-                    : []}
-                  learnedPreferences={session.learned_preferences || []}
-                  createdAt={session.created_at}
-                  isActive={session.is_active !== false}
-                  onDelete={handleDeleteSession}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          /* Empty State */
-          <div className="text-center py-3xl">
-            <div className="text-6xl mb-lg">📭</div>
-            <h2 className="text-h3 text-foreground mb-sm">No Sessions Yet</h2>
-            <p className="text-body text-muted mb-lg max-w-md mx-auto">
-              Start a search to create your first session. The AI will remember your preferences and learn from your searches.
-            </p>
-            <button
-              onClick={handleCreateSession}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              Start Your First Search
-            </button>
-          </div>
-        )}
-
-        {/* Info Card */}
-        <div className="mt-3xl bg-info/5 border-2 border-info/20 rounded-xl p-lg">
-          <h3 className="text-h4 text-info mb-sm">💡 How Sessions Work</h3>
-          <ul className="space-y-2 text-body-sm text-muted">
-            <li className="flex items-start gap-2">
-              <span className="text-info mt-0.5">•</span>
-              <span>Each search creates or continues a session</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-info mt-0.5">•</span>
-              <span>AI learns your preferences across queries (budget, brand, features)</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-info mt-0.5">•</span>
-              <span>Follow-up queries get personalized based on session memory</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-info mt-0.5">•</span>
-              <span>Sessions help refine results without repeating context</span>
-            </li>
-          </ul>
-        </div>
-      </main>
-    </div>
+      </div>
+    </ChatLayout>
   );
 }

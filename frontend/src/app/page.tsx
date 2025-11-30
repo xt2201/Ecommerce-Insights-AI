@@ -1,191 +1,246 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Bot, DollarSign, Scale, Zap, Target, Brain, TrendingUp } from 'lucide-react';
-import Header from '@/components/Header';
-import SearchBar from '@/components/SearchBar';
-import LoadingSpinner from '@/components/Loading';
-import GradientBackground from '@/components/GradientBackground';
-import FeatureCard from '@/components/FeatureCard';
-import ExampleQueryBadge from '@/components/ExampleQueryBadge';
-import { useSearch } from '@/hooks/useApi';
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+import { Sparkles, Zap, Target, Scale } from 'lucide-react';
+import ChatLayout from '@/components/ChatLayout';
+import ChatInput from '@/components/ChatInput';
+import ChatMessage, { type ChatMessageData } from '@/components/ChatMessage';
+import { useStreamingSearch } from '@/hooks/useStreamingSearch';
+import type { ShoppingResponse } from '@/lib/api';
 
-export default function Home() {
-  const router = useRouter();
-  const { search, isLoading } = useSearch();
-  const [lastQuery, setLastQuery] = useState('');
+import ThoughtProcessSidebar from '@/components/ThoughtProcessSidebar';
 
-  const handleSearch = async (query: string) => {
-    setLastQuery(query);
-    await search(query);
-    // Navigate to search results page
-    router.push(`/search?q=${encodeURIComponent(query)}`);
+function ChatPage() {
+  const searchParams = useSearchParams();
+  const sessionParam = searchParams.get('session');
+  
+  const [messages, setMessages] = useState<ChatMessageData[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(sessionParam);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const {
+    startStreaming,
+    isStreaming,
+    currentStep,
+    events,
+    error
+  } = useStreamingSearch({
+    onStart: (sid) => {
+      setSessionId(sid);
+      setIsRightSidebarOpen(true); // Auto-open sidebar on search start
+    },
+    onProgress: (step, message) => {
+      // Update streaming message
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage && lastMessage.role === 'assistant' && lastMessage.isLoading) {
+          return prev.map((msg, idx) => 
+            idx === prev.length - 1 
+              ? { ...msg, streamingContent: message }
+              : msg
+          );
+        }
+        return prev;
+      });
+    },
+    onComplete: (result) => {
+      const data = result as ShoppingResponse;
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastIdx = newMessages.length - 1;
+        if (newMessages[lastIdx]?.role === 'assistant') {
+          newMessages[lastIdx] = {
+            ...newMessages[lastIdx],
+            isLoading: false,
+            streamingContent: undefined,
+            data: data,
+            content: `Tìm thấy ${data.total_results} sản phẩm`
+          };
+        }
+        return newMessages;
+      });
+    },
+    onError: (err) => {
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastIdx = newMessages.length - 1;
+        if (newMessages[lastIdx]?.role === 'assistant') {
+          newMessages[lastIdx] = {
+            ...newMessages[lastIdx],
+            isLoading: false,
+            content: `Xin lỗi, đã có lỗi xảy ra: ${err}`
+          };
+        }
+        return newMessages;
+      });
+    }
+  });
+
+  const handleSendMessage = async (content: string) => {
+    // Add user message
+    const userMessage: ChatMessageData = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content,
+      timestamp: new Date()
+    };
+
+    // Add assistant loading message
+    const assistantMessage: ChatMessageData = {
+      id: `assistant-${Date.now()}`,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isLoading: true
+    };
+
+    setMessages(prev => [...prev, userMessage, assistantMessage]);
+
+    // Start streaming search
+    await startStreaming(content, sessionId || undefined);
+  };
+
+  const isNewChat = messages.length === 0;
+
   return (
-    <div className="min-h-screen bg-background">
-      <GradientBackground />
-      <Header />
+    <ChatLayout>
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto">
+            {isNewChat ? (
+              /* Welcome Screen */
+              <div className="h-full flex flex-col items-center justify-center px-4 py-8">
+                <div className="max-w-2xl w-full text-center">
+                  {/* Logo */}
+                  <div className="mb-6">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-lg mb-4">
+                      <span className="text-3xl">🛒</span>
+                    </div>
+                    <h1 className="text-3xl font-bold text-foreground mb-2">
+                      Amazon Shopping Assistant
+                    </h1>
+                    <p className="text-muted-foreground">
+                      Tìm kiếm sản phẩm thông minh với AI
+                    </p>
+                  </div>
 
-      <main className="max-w-container mx-auto px-lg py-3xl">
-        {/* Hero Section */}
-        <div className="text-center mb-3xl">
-          <div className="mb-lg">
-            <div className="inline-block mb-md">
-              <div className="text-6xl mb-4 animate-bounce" style={{ animationDuration: '2s' }}>
-                🛍️
+                  {/* Feature cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 mb-8">
+                    <FeatureCard
+                      icon={<Zap className="w-5 h-5" />}
+                      title="Nhanh chóng"
+                      description="Phân tích hàng nghìn sản phẩm trong giây lát"
+                    />
+                    <FeatureCard
+                      icon={<Target className="w-5 h-5" />}
+                      title="Chính xác"
+                      description="AI đánh giá value score từ reviews thực"
+                    />
+                    <FeatureCard
+                      icon={<Scale className="w-5 h-5" />}
+                      title="So sánh"
+                      description="Phân tích đánh đổi giữa các lựa chọn"
+                    />
+                  </div>
+
+                  {/* Example queries */}
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Thử hỏi:</p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {[
+                        'Laptop gaming dưới $1000',
+                        'Tai nghe bluetooth chống ồn',
+                        'Giày chạy bộ cho nam',
+                        'Monitor 4K 27 inch'
+                      ].map((query) => (
+                        <button
+                          key={query}
+                          onClick={() => handleSendMessage(query)}
+                          className="px-4 py-2 rounded-full border border-border bg-card hover:bg-accent hover:border-primary/50 text-sm text-foreground transition-all"
+                        >
+                          {query}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <h1 className="text-h1 text-foreground mb-md bg-clip-text text-transparent bg-gradient-to-r from-primary via-secondary to-primary bg-[length:200%_auto] animate-gradient">
-              Amazon Shopping Assistant
-            </h1>
-            <p className="text-body-lg text-muted max-w-prose mx-auto">
-              Tìm kiếm sản phẩm Amazon thông minh với sức mạnh của AI Agents.
-              Nhận đề xuất tốt nhất dựa trên phân tích giá trị và so sánh chi tiết.
-            </p>
+            ) : (
+              /* Messages List */
+              <div className="pb-4">
+                {messages.map((message) => (
+                  <ChatMessage 
+                    key={message.id} 
+                    message={message} 
+                    onSuggestionClick={handleSendMessage}
+                  />
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
           </div>
 
-          {/* Search Bar */}
-          <div className="max-w-wide mx-auto">
-            <SearchBar
-              onSearch={handleSearch}
-              isLoading={isLoading}
-              placeholder="Tìm laptop gaming, tai nghe bluetooth, giày chạy bộ..."
-              size="lg"
-            />
-          </div>
-
-          {/* Example Queries */}
-          <div className="mt-lg">
-            <p className="text-sm text-muted mb-md">Thử ngay:</p>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <ExampleQueryBadge
-                query="laptop gaming under $1000"
-                icon="💻"
-                onSelect={(q) => setLastQuery(q)}
-              />
-              <ExampleQueryBadge
-                query="wireless headphones bluetooth"
-                icon="🎧"
-                onSelect={(q) => setLastQuery(q)}
-              />
-              <ExampleQueryBadge
-                query="running shoes for men"
-                icon="👟"
-                onSelect={(q) => setLastQuery(q)}
-              />
-              <ExampleQueryBadge
-                query="4K monitor 27 inch"
-                icon="🖥️"
-                onSelect={(q) => setLastQuery(q)}
-              />
-            </div>
-          </div>
-
-          {isLoading && (
-            <div className="mt-xl">
-              <LoadingSpinner size="lg" text="Đang phân tích và tìm kiếm sản phẩm tốt nhất..." />
-            </div>
-          )}
-        </div>
-
-        {/* Feature Cards */}
-        <div className="grid md:grid-cols-3 gap-lg mb-3xl">
-          <FeatureCard
-            icon={Bot}
-            title="AI-Powered Analysis"
-            description="7 AI agents phân tích query, tìm kiếm, đánh giá reviews, xu hướng thị trường và giá cả để đề xuất sản phẩm tối ưu"
-            gradient="from-primary/20 to-info/20"
-          />
-          <FeatureCard
-            icon={Target}
-            title="Value Score"
-            description="Điểm giá trị dựa trên giá cả, đánh giá, tính năng, độ phù hợp và phân tích sentiment reviews"
-            gradient="from-secondary/20 to-primary/20"
-          />
-          <FeatureCard
-            icon={Scale}
-            title="Smart Comparison"
-            description="Phân tích đánh đổi giữa các sản phẩm, market trends và price history để đưa ra quyết định sáng suốt"
-            gradient="from-info/20 to-secondary/20"
+          {/* Input Area - Fixed at bottom */}
+          <ChatInput
+            onSend={handleSendMessage}
+            isLoading={isStreaming}
+            placeholder="Hỏi về sản phẩm bạn muốn tìm..."
           />
         </div>
 
-        {/* How It Works */}
-        <section className="bg-card rounded-xl border-2 border-border p-xl">
-          <h2 className="text-h3 text-foreground mb-lg text-center">
-            Cách hoạt động
-          </h2>
-          <div className="grid md:grid-cols-4 gap-lg">
-            <Step
-              number={1}
-              title="Router Agent"
-              description="Phân loại query: tìm kiếm, so sánh, hoặc FAQ"
-            />
-            <Step
-              number={2}
-              title="Planning Agent"
-              description="Trích xuất yêu cầu và tối ưu search query"
-            />
-            <Step
-              number={3}
-              title="Analysis Agent"
-              description="So sánh sản phẩm và tính value score"
-            />
-            <Step
-              number={4}
-              title="Response Agent"
-              description="Tạo câu trả lời và đề xuất cuối cùng"
-            />
-          </div>
-        </section>
-
-        {/* Stats */}
-        <div className="mt-3xl text-center">
-          <div className="grid md:grid-cols-3 gap-lg max-w-3xl mx-auto">
-            <Stat value="4" label="AI Agents" />
-            <Stat value="~28K" label="Tokens/Search" />
-            <Stat value="$0.017" label="Cost/Search" />
-          </div>
-          <p className="mt-lg text-sm text-muted">
-            Powered by Cerebras (qwen-3-32b + llama3.1-8b) - 35x rẻ hơn GPT-4
-          </p>
-        </div>
-      </main>
-    </div>
+        {/* Right Sidebar */}
+        <ThoughtProcessSidebar 
+          isOpen={isRightSidebarOpen}
+          onToggle={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
+          events={events}
+          isStreaming={isStreaming}
+          currentStep={currentStep}
+        />
+      </div>
+    </ChatLayout>
   );
 }
 
-// ============================================================================
-// Sub-components
-// ============================================================================
-
-function Step({
-  number,
-  title,
-  description,
-}: {
-  number: number;
+function FeatureCard({ 
+  icon, 
+  title, 
+  description 
+}: { 
+  icon: React.ReactNode;
   title: string;
   description: string;
 }) {
   return (
-    <div className="text-center">
-      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground font-bold text-xl mb-md">
-        {number}
+    <div className="p-4 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-primary/30 transition-all">
+      <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 text-primary mb-3">
+        {icon}
       </div>
-      <h4 className="text-body font-semibold text-foreground mb-sm">{title}</h4>
-      <p className="text-body-sm text-muted">{description}</p>
+      <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
+export default function Home() {
   return (
-    <div>
-      <div className="text-h2 font-mono text-primary mb-sm">{value}</div>
-      <div className="text-body-sm text-muted">{label}</div>
-    </div>
+    <Suspense fallback={
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    }>
+      <ChatPage />
+    </Suspense>
   );
 }

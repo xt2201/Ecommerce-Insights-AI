@@ -18,6 +18,26 @@ const nextConfig = {
       },
     ],
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://backend:8000/api/:path*',
+      },
+      {
+        source: '/health',
+        destination: 'http://backend:8000/health',
+      },
+      {
+        source: '/docs',
+        destination: 'http://backend:8000/docs',
+      },
+      {
+        source: '/openapi.json',
+        destination: 'http://backend:8000/openapi.json',
+      },
+    ];
+  },
 };
 
 export default nextConfig;
