@@ -120,8 +120,8 @@ def build_graph(checkpointer=None):
     # Planning path: router → planning → collection
     graph.add_edge("planning", "collection")
     
-    # Clarification path: router → clarification → router (Loop back after interrupt)
-    graph.add_edge("clarification", "router")
+    # Clarification path: router → clarification → END
+    graph.add_edge("clarification", END)
     
     # Collection branches to Intelligence nodes (Parallel) OR loops back to Planning
     # Flow: Collection -> check_search_quality -> [Planning] OR [Review, Market, Price]

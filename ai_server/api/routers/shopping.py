@@ -336,18 +336,13 @@ async def search_products_stream(
                         if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
                             output_data = event.get("data", {}).get("output")
                             # Sanitize output for frontend (avoid huge objects)
-                            safe_output = {}
+                            # Send full output as requested by user
+                            # For large objects like collection/analysis, we send the structured data
+                            # Frontend will handle the display (scrollable)
                             if isinstance(output_data, dict):
-                                # Extract relevant info based on node type
-                                if node_name == "planning":
-                                    safe_output = {"plan": output_data.get("search_plan")}
-                                elif node_name == "collection":
-                                    safe_output = {"products_found": len(output_data.get("products", []))}
-                                elif node_name == "analysis":
-                                    safe_output = {"analysis_summary": "Analysis complete"}
-                                else:
-                                    # For other nodes, try to send a summary or small part
-                                    safe_output = str(output_data)[:200] + "..." if len(str(output_data)) > 200 else output_data
+                                safe_output = output_data
+                            else:
+                                safe_output = str(output_data)
                             
                             yield f"data: {json.dumps({'type': 'node_output', 'node': node_name, 'output': safe_output})}\n\n"
 
@@ -361,7 +356,14 @@ async def search_products_stream(
                 snapshot = await graph.aget_state(config)
                 if snapshot.next:
                     logger.info("Yielding interrupt event")
-                    yield f"data: {json.dumps({'type': 'interrupt', 'node': 'clarification', 'message': 'Clarification needed', 'thread_id': session_id})}\n\n"
+                    # Extract actual interrupt message if available
+                    interrupt_msg = "Clarification needed"
+                    if snapshot.tasks and snapshot.tasks[0].interrupts:
+                        interrupt_value = snapshot.tasks[0].interrupts[0].value
+                        if isinstance(interrupt_value, str):
+                            interrupt_msg = interrupt_value
+                    
+                    yield f"data: {json.dumps({'type': 'interrupt', 'node': 'clarification', 'message': interrupt_msg, 'thread_id': session_id})}\n\n"
                 else:
                     logger.info("Yielding complete event")
                     result = snapshot.values

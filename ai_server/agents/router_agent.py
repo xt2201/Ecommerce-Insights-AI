@@ -198,15 +198,7 @@ def router_node(state: AgentState) -> AgentState:
                 debug_notes.append(f"Router: Re-classified as {classification.route} ({classification.confidence:.2f})")
 
         # Map routes
-        # CRITICAL: If this is a follow-up, override clarification route
-        # Follow-ups like "cheaper" rely on context, not standalone clarity
-        if is_followup and classification.route == "clarification":
-            debug_notes.append(
-                f"Router: Overriding 'clarification' to 'planning' for follow-up query. "
-                f"Context will resolve ambiguity."
-            )
-            route_decision = "planning"
-        elif classification.route == "direct_search":
+        if classification.route == "direct_search":
             route_decision = "direct_search"
         elif classification.route == "clarification":
             route_decision = "clarification"
@@ -319,16 +311,5 @@ def request_clarification_handler(state: AgentState) -> AgentState:
     debug_notes.append("Requesting clarification (vague query)")
     state["debug_notes"] = debug_notes
     
-    # PHASE 3 HITL: Interrupt execution to wait for user input
-    # The value returned by interrupt() will be the user's input when resumed
-    user_answer = interrupt(clarification_message)
-    
-    # Update query with clarification
-    if user_answer:
-        original_query = state.get("user_query", "")
-        new_query = f"{original_query} (User Clarification: {user_answer})"
-        state["user_query"] = new_query
-        debug_notes.append(f"Resumed with clarification: {user_answer}")
-        state["debug_notes"] = debug_notes
-    
+    # Return state to end the turn. User will reply in a new turn.
     return state

@@ -14,6 +14,7 @@ export type StreamEvent =
   | { type: 'progress'; step: number; node: string; message: string }
   | { type: 'node_output'; node: string; output: any }
   | { type: 'chunk'; content: string }
+  | { type: 'interrupt'; node: string; message: string; thread_id: string }
   | { type: 'complete'; result: ShoppingResponse }
   | { type: 'error'; message: string }
   | { type: 'end' };
@@ -22,9 +23,21 @@ export interface UseStreamingSearchOptions {
   onStart?: (sessionId: string) => void;
   onProgress?: (step: number, message: string) => void;
   onChunk?: (content: string) => void;
+  onInterrupt?: (message: string, threadId: string) => void;
   onComplete?: (result: unknown) => void;
   onError?: (error: string) => void;
 }
+
+// ... inside switch ...
+              case 'interrupt':
+                options.onInterrupt?.(event.message || '', event.thread_id || '');
+                setIsStreaming(false);
+                break;
+              case 'complete':
+                options.onComplete?.(event.result);
+                setIsStreaming(false);
+                break;
+              case 'error':
 
 export function useStreamingSearch(options: UseStreamingSearchOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
@@ -98,6 +111,10 @@ export function useStreamingSearch(options: UseStreamingSearchOptions = {}) {
                 break;
               case 'chunk':
                 options.onChunk?.(event.content || '');
+                break;
+              case 'interrupt':
+                options.onInterrupt?.(event.message || '', event.thread_id || '');
+                setIsStreaming(false);
                 break;
               case 'complete':
                 options.onComplete?.(event.result);

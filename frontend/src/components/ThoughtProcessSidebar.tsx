@@ -41,7 +41,7 @@ export default function ThoughtProcessSidebar({
   }, [events]);
 
   // Filter relevant events (progress updates)
-  const progressEvents = events.filter(e => e.type === 'progress' || e.type === 'start' || e.type === 'complete' || e.type === 'node_output');
+  const progressEvents = events.filter(e => e.type === 'progress' || e.type === 'start' || e.type === 'complete' || e.type === 'node_output' || e.type === 'interrupt');
 
   const getStepIcon = (node?: string) => {
     switch (node?.toLowerCase()) {
