@@ -28,16 +28,7 @@ export interface UseStreamingSearchOptions {
   onError?: (error: string) => void;
 }
 
-// ... inside switch ...
-              case 'interrupt':
-                options.onInterrupt?.(event.message || '', event.thread_id || '');
-                setIsStreaming(false);
-                break;
-              case 'complete':
-                options.onComplete?.(event.result);
-                setIsStreaming(false);
-                break;
-              case 'error':
+
 
 export function useStreamingSearch(options: UseStreamingSearchOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);

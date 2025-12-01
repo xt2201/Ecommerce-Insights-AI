@@ -295,17 +295,15 @@ def request_clarification_handler(state: AgentState) -> AgentState:
         f"Ví dụ: 'tai nghe bluetooth dưới $100 với chống ồn'"
     )
     
-    state["response"] = ResponsePayload(
-        summary=clarification_message,
-        recommendations=[],
-        analysis=AnalysisSnapshot(
-            cheapest=None,
-            highest_rated=None,
-            best_value=None,
-            noteworthy_insights=["Query requires clarification"]
-        ),
-        raw_products=[]
-    )
+    state["final_response"] = {
+        "summary": clarification_message,
+        "recommendations": [],
+        "analysis": {
+            "noteworthy_insights": ["Query requires clarification"]
+        },
+        "red_flags": [],
+        "follow_up_suggestions": []
+    }
     
     debug_notes = state.get("debug_notes", [])
     debug_notes.append("Requesting clarification (vague query)")

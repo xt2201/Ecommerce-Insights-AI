@@ -161,11 +161,14 @@ def format_shopping_response(session_id, query, result):
         )
 
     if not rec_info:
+        # Check if we have a clarification message in final_response
+        clarification = final_response.get("summary") if final_response else None
+        
         rec_info = RecommendationInfo(
-            recommended_product=products[0] if products else ProductInfo(title="No products found", link="", price="$0.00"),
+            recommended_product=products[0] if products else ProductInfo(title="Clarification Needed" if clarification else "No products found", link="", price="$0.00"),
             value_score=0.5,
-            reasoning="No specific recommendation available",
-            explanation="Please try a different search query",
+            reasoning=clarification or "No specific recommendation available",
+            explanation=clarification or "Please try a different search query",
         )
         
     # Extract red flags and suggestions
