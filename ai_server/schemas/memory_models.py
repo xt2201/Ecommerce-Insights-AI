@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
 from ai_server.schemas.agent_state import SearchPlan
+from ai_server.schemas.conversation_context import ConversationContext
+
+if TYPE_CHECKING:
+    from ai_server.schemas.session_memory import SessionMemory
 
 
 @dataclass
@@ -18,6 +22,7 @@ class ConversationTurn:
     search_plan: Optional[SearchPlan] = None
     products_found: int = 0
     top_recommendation: Optional[str] = None
+    matched_products: List[Dict[str, Any]] = field(default_factory=list)
     user_feedback: Optional[str] = None  # "liked", "disliked", "bought", "ignored"
     metadata: Dict[str, Any] = field(default_factory=dict)
     
@@ -29,6 +34,7 @@ class ConversationTurn:
             "search_plan": self.search_plan,
             "products_found": self.products_found,
             "top_recommendation": self.top_recommendation,
+            "matched_products": self.matched_products,
             "user_feedback": self.user_feedback,
             "metadata": self.metadata,
         }
@@ -189,6 +195,10 @@ class SessionState:
     user_id: Optional[str] = None
     conversation_history: ConversationHistory = field(default_factory=lambda: ConversationHistory(session_id=""))
     user_preferences: UserPreferences = field(default_factory=lambda: UserPreferences(session_id=""))
+    # Added ConversationContext for multi-turn state persistence
+    conversation_context: ConversationContext = field(default_factory=ConversationContext)
+    # SessionMemory data for graph state persistence (stored as dict to avoid circular import)
+    session_memory_data: Optional[Dict[str, Any]] = None
     context_summary: str = ""
     is_active: bool = True
     created_at: datetime = field(default_factory=datetime.now)
@@ -200,6 +210,8 @@ class SessionState:
             self.conversation_history.session_id = self.session_id
         if not self.user_preferences.session_id:
             self.user_preferences.session_id = self.session_id
+        if not self.conversation_context.session_id:
+            self.conversation_context.session_id = self.session_id
     
     def is_expired(self) -> bool:
         """Check if session has expired."""
@@ -218,6 +230,8 @@ class SessionState:
             "user_id": self.user_id,
             "conversation_history": self.conversation_history.to_dict(),
             "user_preferences": self.user_preferences.to_dict(),
+            "conversation_context": self.conversation_context.model_dump(),
+            "session_memory_data": self.session_memory_data,
             "context_summary": self.context_summary,
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat(),
@@ -230,6 +244,11 @@ class SessionState:
         data = data.copy()
         data["conversation_history"] = ConversationHistory.from_dict(data["conversation_history"])
         data["user_preferences"] = UserPreferences.from_dict(data["user_preferences"])
+        if "conversation_context" in data:
+            data["conversation_context"] = ConversationContext.model_validate(data["conversation_context"])
+        else:
+            data["conversation_context"] = ConversationContext()
+        # session_memory_data is already a dict, no conversion needed
         data["created_at"] = datetime.fromisoformat(data["created_at"])
         if data.get("expires_at"):
             data["expires_at"] = datetime.fromisoformat(data["expires_at"])

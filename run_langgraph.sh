@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# ============================================================
+# LangGraph Development Server
+# ============================================================
+# This script starts the LangGraph dev server with tunnel support
+# for remote access via Cloudflare tunnel.
+#
+# Usage:
+#   ./run_langgraph.sh              # Start with tunnel
+#   ./run_langgraph.sh --no-tunnel  # Start without tunnel
+#
+# The server exposes the shopping_graph.py workflow defined in
+# studio.py for visual debugging in LangGraph Studio.
+# ============================================================
+
 PORT=2024
 
 echo "🔍 Checking port $PORT..."
@@ -18,6 +32,10 @@ fi
 # Wait a moment for the port to be fully released
 sleep 2
 
-echo "🚀 Starting LangGraph dev server..."
+echo "🚀 Starting LangGraph dev server on port $PORT..."
+echo "   📖 Graph: studio.py → shopping_graph.py"
+echo "   🔗 Studio UI will be available at the URL shown below"
+echo ""
+
 # Run langgraph with --tunnel and any additional arguments
 langgraph dev --tunnel "$@"

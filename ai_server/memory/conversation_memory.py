@@ -18,6 +18,7 @@ class ConversationMemory:
         search_plan: Optional[SearchPlan] = None,
         products_found: int = 0,
         top_recommendation: Optional[str] = None,
+        matched_products: List[Dict[str, Any]] = None,
         user_feedback: Optional[str] = None,
     ) -> None:
         """Add a new conversation turn to the session.
@@ -28,6 +29,7 @@ class ConversationMemory:
             search_plan: Generated search plan
             products_found: Number of products found
             top_recommendation: Top recommended product
+            matched_products: List of matched products (dicts)
             user_feedback: User feedback on the recommendation
         """
         turn = ConversationTurn(
@@ -36,6 +38,7 @@ class ConversationMemory:
             search_plan=search_plan,
             products_found=products_found,
             top_recommendation=top_recommendation,
+            matched_products=matched_products or [],
             user_feedback=user_feedback,
         )
         

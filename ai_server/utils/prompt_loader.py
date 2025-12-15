@@ -1,7 +1,8 @@
-"""Utility functions for loading prompts from markdown files."""
+"""Utility functions for loading prompts from markdown and YAML files."""
 
 from __future__ import annotations
 
+import yaml
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,8 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 def load_prompt(prompt_name: str) -> str:
     """
     Load a prompt from a markdown file in the prompts directory.
+    Automatically injects 'system_identity.md' if {{SYSTEM_IDENTITY}} placeholder is present,
+    or prepends it to 'System Prompt' sections.
     
     Args:
         prompt_name: Name of the prompt file (without .md extension)
@@ -24,17 +27,32 @@ def load_prompt(prompt_name: str) -> str:
         
     Raises:
         FileNotFoundError: If the prompt file doesn't exist
-        
-    Example:
-        >>> planning_prompt = load_prompt("planning_agent_prompt")
-        >>> prompt = planning_prompt.format(query="Find laptops under $1000")
     """
     prompt_path = PROMPTS_DIR / f"{prompt_name}.md"
     
     if not prompt_path.exists():
         raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
     
-    return prompt_path.read_text(encoding="utf-8")
+    content = prompt_path.read_text(encoding="utf-8")
+    
+    # Mixin Injection: System Identity
+    # We try to load the identity file. If it exists, we inject it.
+    identity_path = PROMPTS_DIR / "system_identity.md"
+    if identity_path.exists():
+        identity_content = identity_path.read_text(encoding="utf-8")
+        
+        # Strategy 1: Explicit Placeholder
+        if "{{SYSTEM_IDENTITY}}" in content:
+            content = content.replace("{{SYSTEM_IDENTITY}}", identity_content)
+            
+        # Strategy 2: Implicit Prepend to System Prompt sections
+        # This is a heuristic to ensure identity is present even if not explicitly requested
+        # We look for "## System Prompt" and inject the identity after it
+        elif "## System Prompt" in content and "XT AI Shopping Assistant" not in content:
+            # Only inject if not already present (to avoid double injection if file was manually updated)
+            content = content.replace("## System Prompt", f"## System Prompt\n\n{identity_content}\n")
+            
+    return content
 
 
 def get_prompt_section(prompt_content: str, section_name: str) -> Optional[str]:
@@ -80,13 +98,23 @@ def get_prompt_section(prompt_content: str, section_name: str) -> Optional[str]:
 def load_prompts_as_dict(prompt_name: str) -> dict[str, str]:
     """
     Load all sections from a prompt file into a dictionary.
+    Supports both YAML (.yaml) and Markdown (.md) formats.
+    YAML files are preferred if they exist.
     
     Args:
-        prompt_name: Name of the prompt file (without .md extension)
+        prompt_name: Name of the prompt file (without extension)
         
     Returns:
-        Dictionary mapping section keys (lowercase, underscored) to content
+        Dictionary mapping section keys to content
     """
+    # Try YAML first (preferred for new agentic prompts)
+    yaml_path = PROMPTS_DIR / f"{prompt_name}.yaml"
+    if yaml_path.exists():
+        with open(yaml_path, 'r', encoding='utf-8') as f:
+            prompts = yaml.safe_load(f)
+            return prompts if prompts else {}
+    
+    # Fallback to Markdown
     content = load_prompt(prompt_name)
     prompts = {}
     current_key = None
@@ -110,3 +138,4 @@ def load_prompts_as_dict(prompt_name: str) -> dict[str, str]:
 def clear_prompt_cache():
     """Clear the prompt cache. Useful for development/testing."""
     load_prompt.cache_clear()
+

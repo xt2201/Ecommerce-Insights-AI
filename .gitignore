@@ -53,12 +53,17 @@ htmlcov/
 
 # Logs
 *.log
-logs/
+# logs/
 
 draft/
 node_modules/
 *.zip
-tests/
-scripts/
+
+# scripts/
 draft/
 docs/
+tests/
+report/
+logs/
+data/
+scripts/

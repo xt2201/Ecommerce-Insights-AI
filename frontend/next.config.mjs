@@ -19,22 +19,25 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || 'http://backend:8000';
+    console.log(`Proxying API requests to: ${backendUrl}`);
+    
     return [
       {
         source: '/api/:path*',
-        destination: 'http://backend:8000/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
       },
       {
         source: '/health',
-        destination: 'http://backend:8000/health',
+        destination: `${backendUrl}/health`,
       },
       {
         source: '/docs',
-        destination: 'http://backend:8000/docs',
+        destination: `${backendUrl}/docs`,
       },
       {
         source: '/openapi.json',
-        destination: 'http://backend:8000/openapi.json',
+        destination: `${backendUrl}/openapi.json`,
       },
     ];
   },

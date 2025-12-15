@@ -46,6 +46,7 @@ export interface ShoppingResponse {
   search_metadata?: Record<string, unknown>;
   red_flags?: string[];
   follow_up_suggestions?: string[];
+  final_answer?: string;
 }
 
 export interface SessionInfo {
@@ -70,6 +71,7 @@ export interface ConversationTurn {
   search_plan?: unknown;
   products_found: number;
   top_recommendation?: string;
+  matched_products?: Product[];
   user_feedback?: string;
   metadata?: Record<string, unknown>;
 }
@@ -104,7 +106,7 @@ export interface GraphTracesResponse {
   total_traces: number;
 }
 
-export type StreamEventType = 'start' | 'progress' | 'chunk' | 'interrupt' | 'complete' | 'error' | 'end';
+export type StreamEventType = 'start' | 'progress' | 'chunk' | 'interrupt' | 'complete' | 'error' | 'end' | 'node_output';
 
 export interface StreamEvent {
   type: StreamEventType;
@@ -115,6 +117,7 @@ export interface StreamEvent {
   content?: string;
   thread_id?: string;
   result?: any;
+  output?: any;
 }
 
 // ============================================================================

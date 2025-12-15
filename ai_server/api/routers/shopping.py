@@ -79,151 +79,79 @@ class ShoppingResponse(BaseModel):
 
 # Helper to format response
 def format_shopping_response(session_id, query, result):
-    # Extract products from state (was 'matched_products', now 'products')
-    matched_products = result.get("products", [])
+    # Extract products from SharedWorkspace
+    candidates = result.get("candidates", [])
     
-    # Extract recommendation info
-    # Try to get from final_response first (Phase 2)
-    final_response = result.get("final_response", {})
-    analysis_result = result.get("analysis_result", {})
+    # Extract final report
+    final_report = result.get("artifacts", {}).get("final_report", {})
     
     products = []
-    for p in matched_products[:10]:
+    for c in candidates[:10]:
+        # Map ProductCandidate to ProductInfo
+        p_data = c.source_data
         products.append(ProductInfo(
-            title=p.get("title", ""),
-            link=p.get("link", ""),
-            price=f"${p.get('price', 0):.2f}" if p.get("price") is not None else "N/A",
-            rating=p.get("rating"),
-            reviews=p.get("reviews_count") or p.get("reviews"),
-            image=p.get("image") or p.get("thumbnail"),
-            position=p.get("position"),
-            source=p.get("source"),
-            delivery=p.get("delivery"),
-            thumbnail=p.get("thumbnail"),
+            title=c.title,
+            link=p_data.get("link", ""),
+            price=f"${c.price:.2f}" if c.price is not None else "N/A",
+            rating=p_data.get("rating"),
+            reviews=p_data.get("reviews_count"),
+            image=p_data.get("thumbnail"),
+            thumbnail=p_data.get("thumbnail"),
         ))
     
     # Construct recommendation info
     rec_info = None
     
-    if final_response:
-        # Use structured final response
-        recs = final_response.get("recommendations", [])
-        if recs:
-            top_rec = recs[0]
-            # Format tradeoff analysis
-            tradeoff_raw = final_response.get("reasoning_summary", {}).get("tradeoffs", "")
-            tradeoff_str = ""
-            if isinstance(tradeoff_raw, dict):
-                for k, v in tradeoff_raw.items():
-                    tradeoff_str += f"• {k.replace('_', ' ').title()}: {v}\n"
-            elif isinstance(tradeoff_raw, list):
-                for item in tradeoff_raw:
-                    tradeoff_str += f"• {item}\n"
-            else:
-                tradeoff_str = str(tradeoff_raw)
-
+    if final_report:
+        top_picks = final_report.get("top_picks", [])
+        if top_picks:
+            top_pick = top_picks[0]
+            # We need to find the full product info for the top pick
+            # top_pick is a dict from ProductCandidate.dict()
+            
             rec_info = RecommendationInfo(
                 recommended_product=ProductInfo(
-                    title=top_rec.get("product_name", ""),
-                    link=top_rec.get("purchase_link", ""),
-                    price=f"${top_rec.get('price', 0):.2f}" if top_rec.get("price") is not None else "N/A",
-                    rating=top_rec.get("rating"),
+                    title=top_pick.get("title", ""),
+                    link=top_pick.get("source_data", {}).get("link", ""),
+                    price=f"${top_pick.get('price', 0):.2f}" if top_pick.get("price") is not None else "N/A",
                 ),
-                value_score=top_rec.get("value_score", 0.0),
-                reasoning=top_rec.get("why_recommended", ""),
-                explanation=final_response.get("executive_summary", {}).get("key_reason", ""),
-                tradeoff_analysis=tradeoff_str
+                value_score=top_pick.get("domain_score", 0.0),
+                reasoning=f"Selected as the best match for '{query}'",
+                explanation=final_report.get("summary", ""),
+                tradeoff_analysis="Trade-off analysis not available in this version."
             )
-    
-    if not rec_info and analysis_result:
-        # Fallback to analysis result
-        top_rec_expl = analysis_result.get("top_recommendation", {})
-        # We need to find the product object for the top recommendation
-        # This is a bit tricky as analysis_result might not have the full product details in top_recommendation
-        # But we can try to match with products list
-        
-        # Format tradeoff analysis
-        tradeoff_raw = analysis_result.get("tradeoff_analysis", "")
-        tradeoff_str = ""
-        if isinstance(tradeoff_raw, dict):
-            # Convert dict to bullet points
-            for k, v in tradeoff_raw.items():
-                tradeoff_str += f"• {k.replace('_', ' ').title()}: {v}\n"
-        else:
-            tradeoff_str = str(tradeoff_raw)
-
-        rec_info = RecommendationInfo(
-            recommended_product=products[0] if products else ProductInfo(title="Analysis complete", link="", price=""),
-            value_score=top_rec_expl.get("match_quality", 0.5),
-            reasoning=top_rec_expl.get("why_recommended", "Best match"),
-            explanation=str(top_rec_expl.get("satisfied_needs", [])),
-            tradeoff_analysis=tradeoff_str
-        )
-
+            
     if not rec_info:
-        # Check if we have a clarification message in final_response
-        clarification = final_response.get("summary") if final_response else None
-        
         rec_info = RecommendationInfo(
-            recommended_product=products[0] if products else ProductInfo(title="Clarification Needed" if clarification else "No products found", link="", price="$0.00"),
-            value_score=0.5,
-            reasoning=clarification or "No specific recommendation available",
-            explanation=clarification or "Please try a different search query",
+            recommended_product=products[0] if products else ProductInfo(title="No products found", link="", price="$0.00"),
+            value_score=0.0,
+            reasoning="No recommendation generated.",
+            explanation="No suitable products found.",
         )
         
-    # Extract red flags and suggestions
-    red_flags = []
-    suggestions = []
-    
-    if final_response:
-        rf_objs = final_response.get("red_flags", [])
-        # Handle both list of strings and list of objects
-        for rf in rf_objs:
-            if isinstance(rf, str):
-                red_flags.append(rf)
-            elif isinstance(rf, dict):
-                red_flags.append(rf.get("description", ""))
-                
-        suggestions_raw = final_response.get("follow_up_suggestions", [])
-        if isinstance(suggestions_raw, list):
-            # Handle list of strings or list of dicts
-            for item in suggestions_raw:
-                if isinstance(item, str):
-                    suggestions.append(item)
-                elif isinstance(item, dict):
-                    # Try to find the suggestion text in common keys
-                    sugg_text = item.get("suggestion") or item.get("text") or item.get("description") or str(item)
-                    suggestions.append(sugg_text)
-        elif isinstance(suggestions_raw, dict):
-            # Handle case where LLM returns a dict wrapper like {'suggestions': [...]}
-            inner_suggestions = suggestions_raw.get("suggestions", [])
-            if isinstance(inner_suggestions, list):
-                for item in inner_suggestions:
-                    if isinstance(item, str):
-                        suggestions.append(item)
-                    elif isinstance(item, dict):
-                        sugg_text = item.get("suggestion") or item.get("text") or item.get("description") or str(item)
-                        suggestions.append(sugg_text)
-        
-    elif analysis_result:
-        rf_objs = analysis_result.get("red_flags", [])
-        for rf in rf_objs:
-            if isinstance(rf, str):
-                red_flags.append(rf)
-            elif isinstance(rf, dict):
-                red_flags.append(rf.get("description", ""))
-
     return ShoppingResponse(
         session_id=session_id,
         user_query=query,
         matched_products=products,
         recommendation=rec_info,
         alternatives=products[1:4] if len(products) > 1 else None,
-        total_results=len(matched_products),
-        search_metadata=result.get("metadata", {}),
-        red_flags=red_flags,
-        follow_up_suggestions=suggestions,
+        total_results=len(products),
+        search_metadata={},
+        red_flags=[],
+        follow_up_suggestions=final_report.get("follow_up_suggestions", ["Try refining your search query."]) if final_report else ["Try refining your search query."],
     )
+
+def to_serializable(obj):
+    """Recursively convert Pydantic models to dicts"""
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if isinstance(obj, list):
+        return [to_serializable(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: to_serializable(v) for k, v in obj.items()}
+    return obj
 
 @router.post("", response_model=ShoppingResponse)
 async def search_products(
@@ -247,31 +175,38 @@ async def search_products(
             # Thread ID for persistence
             config = {"configurable": {"thread_id": session_id}}
             
-            initial_state = {
-                "user_query": request.query,
-                "session_id": session_id,
-                "user_preferences": session.user_preferences,
-                "previous_queries": session.conversation_history.get_recent_queries(5),
-            }
+            # Initialize SharedWorkspace
+            from ai_server.schemas.shared_workspace import SharedWorkspace, DevelopmentPlan
+            # Create initial state with session context
+            initial_state = SharedWorkspace(
+                goal=request.query,
+                user_message=request.query,
+                plan=DevelopmentPlan(goal=request.query, steps=[]),
+                conversation=session.conversation_context  # Load persistent context
+            )
             
             # Use ainvoke for async execution
-            result = await graph.ainvoke(initial_state, config)
+            # Note: LangGraph invoke accepts dict or object. SharedWorkspace is Pydantic.
+            # We pass the object directly.
+            # Execute graph
+            final_state = await graph.ainvoke(initial_state, config)
             
-            # Update memory
-            matched_products = result.get("matched_products", [])
-            rec = result.get("recommendation", {})
-            top_rec = rec.get("product", {}).get("title") if rec else None
+            # Persist updated conversation context
+            if "conversation" in final_state:
+                session.conversation_context = final_state["conversation"]
+                session_manager.update_session(session)
             
+            # --- PHASE 2 MEMORY INTEGRATION ---
+            # Update session history
             ConversationMemory.add_turn_to_session(
-                session,
+                session=session,
                 user_query=request.query,
-                search_plan=result.get("search_plan"),
-                products_found=len(matched_products),
-                top_recommendation=top_rec,
+                products_found=len(final_state.get("candidates", [])),
+                top_recommendation=final_state.get("artifacts", {}).get("final_report", {}).get("summary")
             )
-            session_manager.update_session(session)
+            session_manager.update_session(session) # Update session again after adding turn
             
-            return format_shopping_response(session_id, request.query, result)
+            return format_shopping_response(session_id, request.query, final_state)
             
         except Exception as e:
             log_error(error_logger, e, f"Search failed for {session_id}")
@@ -292,101 +227,73 @@ async def search_products_stream(
             
             try:
                 yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
-                logger.info("Yielded start event")
                 
                 graph = build_graph(checkpointer=checkpointer)
                 config = {"configurable": {"thread_id": session_id}}
                 
-                # Fetch session history for context-aware routing
                 session = session_manager.get_or_create_session(
                     session_id=session_id,
                     user_id=request.user_preferences.get("user_id") if request.user_preferences else None
                 )
                 
-                # Extract previous queries from session turns
-                previous_queries = []
-                for turn in session.conversation_history.turns[-5:]:  # Last 5 turns for context
-                    if turn.user_query:
-                        previous_queries.append(turn.user_query)
-                
-                initial_state = {
-                    "user_query": request.query,
-                    "session_id": session_id,
-                    "previous_queries": previous_queries,
-                }
+                # Initialize SharedWorkspace
+                from ai_server.schemas.shared_workspace import SharedWorkspace, DevelopmentPlan
+                initial_state = SharedWorkspace(
+                    goal=request.query,
+                    user_message=request.query,
+                    plan=DevelopmentPlan(goal=request.query, steps=[]),
+                    conversation=session.conversation_context  # Load persistent context
+                )
                 
                 step_count = 0
                 async for event in graph.astream_events(initial_state, config, version="v2"):
-                    step_count += 1
-                    # logger.info(f"Event received: {event.get('event')} - {event.get('name')}")
-                    
-                    # Progress events (Start of node)
-                    if event.get("event") == "on_chain_start":
-                        # Try to get graph node name from metadata first
-                        metadata = event.get("metadata", {})
-                        node_name = metadata.get("langgraph_node") or event.get("name", "")
+                    try:
+                        step_count += 1
                         
-                        # Filter out internal LangGraph nodes
-                        if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
-                             logger.info(f"Yielding progress for node: {node_name}")
-                             yield f"data: {json.dumps({'type': 'progress', 'step': step_count, 'node': node_name, 'message': f'Executing {node_name}'})}\n\n"
-                    
-                    # Output events (End of node)
-                    if event.get("event") == "on_chain_end":
-                        metadata = event.get("metadata", {})
-                        node_name = metadata.get("langgraph_node") or event.get("name", "")
-                        
-                        if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
-                            output_data = event.get("data", {}).get("output")
-                            # Sanitize output for frontend (avoid huge objects)
-                            # Send full output as requested by user
-                            # For large objects like collection/analysis, we send the structured data
-                            # Frontend will handle the display (scrollable)
-                            if isinstance(output_data, dict):
-                                safe_output = output_data
-                            else:
-                                safe_output = str(output_data)
+                        # Progress events (Start of node)
+                        if event.get("event") == "on_chain_start":
+                            metadata = event.get("metadata", {})
+                            node_name = metadata.get("langgraph_node") or event.get("name", "")
                             
-                            yield f"data: {json.dumps({'type': 'node_output', 'node': node_name, 'output': safe_output})}\n\n"
+                            if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
+                                yield f"data: {json.dumps({'type': 'progress', 'step': step_count, 'node': node_name, 'message': f'Executing {node_name}'})}\n\n"
+                        
+                        # Output events (End of node)
+                        if event.get("event") == "on_chain_end":
+                            metadata = event.get("metadata", {})
+                            node_name = metadata.get("langgraph_node") or event.get("name", "")
+                            
+                            if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
+                                output_data = event.get("data", {}).get("output")
+                                safe_output = to_serializable(output_data)
+                                
+                                yield f"data: {json.dumps({'type': 'node_output', 'node': node_name, 'output': safe_output}, default=str)}\n\n"
+                    except Exception as e:
+                        logger.error(f"Error in stream event processing: {e}")
 
-                    # Chunk events
-                    if event.get("event") == "on_chat_model_stream":
-                        chunk = event.get("data", {}).get("chunk", {})
-                        if chunk:
-                            yield f"data: {json.dumps({'type': 'chunk', 'content': str(chunk.content)})}\n\n"
-                
-                # Check if interrupted (HITL)
+                # Check if interrupted (HITL) - Not implemented in Antigravity yet, but keeping structure
                 snapshot = await graph.aget_state(config)
                 if snapshot.next:
-                    logger.info("Yielding interrupt event")
-                    # Extract actual interrupt message if available
-                    interrupt_msg = "Clarification needed"
-                    if snapshot.tasks and snapshot.tasks[0].interrupts:
-                        interrupt_value = snapshot.tasks[0].interrupts[0].value
-                        if isinstance(interrupt_value, str):
-                            interrupt_msg = interrupt_value
-                    
-                    yield f"data: {json.dumps({'type': 'interrupt', 'node': 'clarification', 'message': interrupt_msg, 'thread_id': session_id})}\n\n"
+                    yield f"data: {json.dumps({'type': 'interrupt', 'node': 'clarification', 'message': 'Clarification needed', 'thread_id': session_id})}\n\n"
                 else:
                     logger.info("Yielding complete event")
                     result = snapshot.values
                     
-                    # CRITICAL: Save session turn for memory persistence
+                    # Save session turn
                     try:
-                        products = result.get("products", [])
-                        analysis_result = result.get("analysis_result", {})
-                        top_rec_data = analysis_result.get("top_recommendation", {}) if analysis_result else {}
-                        top_rec = top_rec_data.get("product_name") if isinstance(top_rec_data, dict) else None
+                        candidates = result.get("candidates", [])
+                        final_report = result.get("artifacts", {}).get("final_report", {})
+                        top_picks = final_report.get("top_picks", [])
+                        top_rec = top_picks[0].get("title") if top_picks else None
                         
                         ConversationMemory.add_turn_to_session(
                             session,
                             user_query=request.query,
-                            search_plan=result.get("search_plan"),
-                            products_found=len(products),
+                            search_plan={"goal": request.query},
+                            products_found=len(candidates),
                             top_recommendation=top_rec,
                         )
                         session_manager.update_session(session)
-                        logger.info(f"Session updated with turn: {request.query}")
                     except Exception as save_error:
                         logger.error(f"Failed to save session turn: {save_error}")
                     
@@ -394,7 +301,37 @@ async def search_products_stream(
                     response_dict = json.loads(formatted_response.json())
                     yield f"data: {json.dumps({'type': 'complete', 'result': response_dict})}\n\n"
                     yield "data: {\"type\": \"end\"}\n\n"
-                    
+                                
+                # Persist updated conversation context after stream ends
+                try:
+                    # Retrieve final state from checkpointer
+                    final_state_snapshot = await graph.aget_state(config)
+                    if final_state_snapshot and final_state_snapshot.values:
+                        final_context = final_state_snapshot.values.get("conversation")
+                        if final_context:
+                            session.conversation_context = final_context
+                            session_manager.update_session(session)
+                            logger.info(f"Updated session {session.session_id} context")
+                            
+                            # Also update conversation history (Phase 2)
+                            candidates = final_state_snapshot.values.get("candidates", [])
+                            artifacts = final_state_snapshot.values.get("artifacts", {})
+                            report = artifacts.get("final_report", {})
+                            summary = report.get("summary") if isinstance(report, dict) else str(report)
+                            
+                            ConversationMemory.add_turn_to_session(
+                                session=session,
+                                user_query=request.query,
+                                products_found=len(candidates),
+                                top_recommendation=summary
+                            )
+                            session_manager.update_session(session) # Update session again after adding turn
+                except Exception as e:
+                    logger.error(f"Failed to persist session context: {e}")
+
+                # Send completion event
+                yield f"data: {json.dumps({'type': 'complete', 'result': {'status': 'completed'}})}\n\n"
+            
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"

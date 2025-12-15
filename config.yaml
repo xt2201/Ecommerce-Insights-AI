@@ -23,85 +23,41 @@ langsmith:
 
 agents:
   # ─────────────────────────────────────────────────────────────────────────
-  # 1. Router Agent - Query Classification & Routing
+  # 0. Manager Agent (Orchestrator) - Mission Control
   # ─────────────────────────────────────────────────────────────────────────
-  # Routes to: direct_search | planning | clarification
-  # Prompts: ai_server/prompts/router_agent_prompts.md
-  router:
-    provider: "cerebras"
-    model_name: "qwen-3-32b"
-    temperature: 0.0
-    max_tokens: 2000
-  
-  # ─────────────────────────────────────────────────────────────────────────
-  # 2. Planning Agent - Search Strategy Builder
-  # ─────────────────────────────────────────────────────────────────────────
-  # Uses tools in: ai_server/tools/planning_tools.py
-  # Prompts: ai_server/prompts/planning_agent_prompts.md
-  planning:
+  # Prompts: ai_server/prompts/manager_agent_prompts.md
+  manager:
     provider: "cerebras"
     model_name: "qwen-3-32b"
     temperature: 0.1
     max_tokens: 4000
-    max_retries: 2
-  
-  # ─────────────────────────────────────────────────────────────────────────
-  # 3. Collection Agent - SerpAPI Product Fetching
-  # ─────────────────────────────────────────────────────────────────────────
-  # NOTE: Does NOT use LLM - pure API calls to SerpAPI
 
-  
   # ─────────────────────────────────────────────────────────────────────────
-  # 4. Review Intelligence Agent (PARALLEL)
+  # 1. Search Agent (The Hunter)
   # ─────────────────────────────────────────────────────────────────────────
-  # Prompts: ai_server/prompts/review_agent_prompts.md
-  review:
+  # Wraps Collection Agent logic
+  search:
+    provider: "cerebras" # Not used for search yet, but good for future
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Advisor Agent (The Expert)
+  # ─────────────────────────────────────────────────────────────────────────
+  advisor:
+    provider: "cerebras"
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+    max_tokens: 4000
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Reviewer Agent (The Critic)
+  # ─────────────────────────────────────────────────────────────────────────
+  reviewer:
     provider: "cerebras"
     model_name: "zai-glm-4.6"
     temperature: 0.1
     max_tokens: 4000
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # 5. Market Intelligence Agent (PARALLEL)
-  # ─────────────────────────────────────────────────────────────────────────
-  # Prompts: ai_server/prompts/market_agent_prompts.md
-  market:
-    provider: "cerebras"
-    model_name: "qwen-3-32b"
-    temperature: 0.1
-    max_tokens: 4000
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # 6. Price Tracking Agent (PARALLEL)
-  # ─────────────────────────────────────────────────────────────────────────
-  # Prompts: ai_server/prompts/price_agent_prompts.md
-  price:
-    provider: "cerebras"
-    model_name: "llama-3.3-70b"
-    temperature: 0.1
-    max_tokens: 2000
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # 7. Analysis Agent - Chain-of-Thought Reasoning
-  # ─────────────────────────────────────────────────────────────────────────
-  # Prompts: ai_server/prompts/analysis_agent_prompts.md
-  analysis:
-    provider: "cerebras"
-    model_name: "gpt-oss-120b"
-    temperature: 0.2
-    max_tokens: 8000
-    max_products_to_analyze: 5
-  
-  # ─────────────────────────────────────────────────────────────────────────
-  # 8. Response Agent - Final Report Generation
-  # ─────────────────────────────────────────────────────────────────────────
-  # Prompts: ai_server/prompts/response_agent_prompts.md
-  response:
-    provider: "cerebras"
-    model_name: "zai-glm-4.6"
-    temperature: 0.3
-    max_tokens: 20000
-    max_recommendations: 5
 
 # ============================================================================
 # LLM Fallback Configuration

@@ -1,217 +1,737 @@
-"""LangGraph workflow with autonomous agents and conditional routing."""
+"""
+Shopping Graph - Agentic Architecture
 
+LLM-powered conversational AI with:
+- QueryUnderstandingAgent for context-aware intent detection
+- LLMRouter for intelligent routing
+- SessionMemory for rich multi-turn conversation context
+"""
 from __future__ import annotations
 
-from langgraph.graph import END, StateGraph
-from langgraph.types import interrupt
+import logging
+import operator
+from typing import Dict, Any, Optional, List, Annotated, TypedDict
+from functools import wraps
 
-from ai_server.agents.analysis_agent import analyze_products
-from ai_server.agents.collection_agent import collect_products
-from ai_server.agents.planning_agent import plan_search
-from ai_server.agents.response_agent import generate_response
-from ai_server.agents.router_agent import (
-    quick_search_handler,
-    request_clarification_handler,
-    route_query,
-    router_node,
-)
-from ai_server.agents.chitchat_agent import chitchat_handler
-from ai_server.agents.faq_agent import faq_handler
-from ai_server.agents.advisory_agent import advisory_handler
-from ai_server.agents.strategy_agent import strategy_clarification_handler
-from ai_server.agents.feedback_agent import feedback_handler
-from ai_server.agents.review_agent import analyze_reviews
-from ai_server.agents.market_agent import analyze_market
-from ai_server.agents.price_agent import analyze_prices
-from ai_server.core.telemetry import traceable_node
-from ai_server.schemas.agent_state import AgentState
+from langgraph.graph import StateGraph, END
 
-from ai_server.agents.hitl_agent import (
-    adjust_strategy_handler,
-    manual_search_handler,
-    verify_analysis_handler,
-    refine_search_criteria
-)
+from ai_server.schemas.session_memory import SessionMemory, SearchIntent, ShownProduct
+from ai_server.agents.query_understanding_agent import QueryUnderstandingAgent, QueryUnderstanding
+from ai_server.agents.llm_router import LLMRouter
+from ai_server.agents.search_agent import SearchAgent
+from ai_server.agents.advisor_agent import AdvisorAgent
+from ai_server.agents.response_generator import ResponseGenerator
+from ai_server.utils.logger import get_logger
 
-def build_graph(checkpointer=None):
-    """Build graph with autonomous agents and conditional routing.
-    
-    Architecture:
-                        ┌─────────────┐
-                        │   Router    │
-                        └──────┬──────┘
-            ┌──────────────────┼──────────────────┐
-            ▼                  ▼                  ▼
-    ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-    │ Quick Search │   │  Planning    │   │Clarification │
-    └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
-           │                  │                  │
-           └────────►  Collection  ◄─────────────┘
-                           │
-               ┌───────────┴───────────┐
-               ▼                       ▼
-        ┌──────────────┐       ┌──────────────┐
-        │ Review Intel │       │ Market Intel │
-        └──────┬───────┘       └──────┬───────┘
-               │                      │
-               ▼                      ▼
-        ┌─────────────────────────────────────┐
-        │           Price Tracking            │
-        └──────────────────┬──────────────────┘
-                           │
-                           ▼
-                        Analysis
-                           │
-                        Response
+logger = get_logger(__name__)
+
+
+# Graph State with proper TypedDict
+class GraphState(TypedDict, total=False):
+    """State flowing through the graph."""
+    user_message: str
+    session_id: str
+    memory: Optional[SessionMemory]
+    understanding: Optional[QueryUnderstanding]
+    route: str
+    search_query: Optional[str]
+    candidates: List[Any]
+    shown_products: List[ShownProduct]
+    final_response: str
+    artifacts: Dict[str, Any]  # Contains final_report with content for API response
+    error: Optional[str]
+
+
+# Initialize agents
+query_understanding_agent = QueryUnderstandingAgent()
+router = LLMRouter()
+searcher = SearchAgent()
+advisor = AdvisorAgent()
+response_gen = ResponseGenerator()
+
+
+def safe_node(func):
+    """Error boundary decorator for graph nodes."""
+    @wraps(func)
+    def wrapper(state: GraphState) -> Dict[str, Any]:
+        try:
+            return func(state)
+        except Exception as e:
+            logger.error(f"Node {func.__name__} failed: {e}", exc_info=True)
+            return {
+                "error": str(e),
+                "route": "synthesize"
+            }
+    return wrapper
+
+
+@safe_node
+def understand_node(state: GraphState) -> Dict[str, Any]:
     """
+    First node: Understand user message with full context.
+    Uses LLM for ALL intent detection (100% agentic - no fast paths).
+    """
+    user_message = state.get("user_message", "")
+    memory: SessionMemory = state.get("memory")
     
-    graph = StateGraph(AgentState)
+    if not memory:
+        memory = SessionMemory(session_id=state.get("session_id", "default"))
     
-    # Add router node (entry point)
-    graph.add_node("router", traceable_node("Router", router_node))
+    logger.info(f"UnderstandNode: Processing '{user_message[:50]}...'")
     
-    # Add workflow nodes
-    graph.add_node("quick_search", traceable_node("QuickSearch", quick_search_handler))
-    graph.add_node("clarification", traceable_node("Clarification", request_clarification_handler))
-    graph.add_node("planning", traceable_node("Planning", plan_search))
-    graph.add_node("collection", traceable_node("Collection", collect_products))
+    # LLM-powered understanding for ALL messages (no fast paths)
     
-    # New V2 Nodes
-    graph.add_node("chitchat", traceable_node("Chitchat", chitchat_handler))
-    graph.add_node("faq", traceable_node("FAQ", faq_handler))
-    graph.add_node("advisory", traceable_node("Advisory", advisory_handler))
-    graph.add_node("strategy_clarification", traceable_node("StrategyClarification", strategy_clarification_handler))
-    graph.add_node("feedback", traceable_node("Feedback", feedback_handler))
+    # Get rich understanding from LLM
+    understanding = query_understanding_agent.understand(user_message, memory)
     
-    # HITL Nodes
-    graph.add_node("adjust_strategy", traceable_node("AdjustStrategy", adjust_strategy_handler))
-    graph.add_node("manual_search", traceable_node("ManualSearch", manual_search_handler))
-    graph.add_node("verify_analysis", traceable_node("VerifyAnalysis", verify_analysis_handler))
+    # Determine route
+    route = router.route(understanding, memory)
     
-    # New Intelligence Nodes
-    graph.add_node("review_intelligence", traceable_node("ReviewIntel", analyze_reviews))
-    graph.add_node("market_intelligence", traceable_node("MarketIntel", analyze_market))
-    graph.add_node("price_tracking", traceable_node("PriceTracking", analyze_prices))
+    # Update memory with user message
+    memory.add_user_message(user_message, intent_type=understanding.message_type)
     
-    graph.add_node("analysis_node", traceable_node("Analysis", analyze_products))
-    graph.add_node("response_node", traceable_node("Response", generate_response))
+    # Handle intent updates - AGENTIC: Initialize intent for ANY message with search context
+    has_search_context = bool(
+        understanding.merged_search_query_en or 
+        understanding.extracted_info.get("category") or
+        understanding.extracted_info.get("keywords")
+    )
     
-    # Set entry point
-    graph.set_entry_point("router")
+    if router.is_new_search(understanding):
+        # AGENTIC: Use LLM-determined is_refinement_only instead of hardcoded patterns
+        # The LLM analyzes if message contains only constraints (gender, color, price)
+        # without a new product category - this is fully agentic, no hardcoded patterns
+        extracted = understanding.extracted_info or {}
+        has_new_category = bool(extracted.get("category"))
+        
+        # LLM sets is_refinement_only=True when message only has constraints
+        is_likely_refinement = (
+            understanding.is_refinement_only and  # LLM-determined
+            not has_new_category and
+            memory.current_intent and 
+            memory.current_intent.is_active
+        )
+        
+        if is_likely_refinement:
+            # LLM identified this as refinement - preserve intent
+            logger.info(f"UnderstandNode: LLM detected refinement-only message (is_refinement_only=True) - treating as refinement")
+            memory.current_intent.add_refinement(user_message)
+            memory.current_intent.merge_constraints(extracted)
+            # Keep the existing keywords, just add new ones
+            if understanding.merged_search_query_en:
+                existing_keywords = set(memory.current_intent.keywords_en or [])
+                new_keywords = understanding.merged_search_query_en.split()[:5]
+                memory.current_intent.keywords_en = list(existing_keywords.union(new_keywords))[:10]
+        else:
+            # Start fresh intent
+            category = extracted.get("category")
+            memory.start_new_intent(user_message, category)
+            if memory.current_intent and extracted:
+                memory.current_intent.merge_constraints(extracted)
+                memory.current_intent.keywords_en = (
+                    understanding.merged_search_query_en.split()[:5]
+                    if understanding.merged_search_query_en else []
+                )
+    elif router.should_update_intent(understanding):
+        # Refine existing intent - BUT create one if it doesn't exist
+        if memory.current_intent:
+            memory.current_intent.add_refinement(user_message)
+            memory.current_intent.merge_constraints(understanding.extracted_info)
+            if understanding.merged_search_query_en:
+                memory.current_intent.keywords_en = understanding.merged_search_query_en.split()[:5]
+        else:
+            # AGENTIC FIX: Intent doesn't exist but we have a refinement - create intent!
+            # This handles flows like: clarification→refinement (e.g., "shoes"→"sneaker")
+            category = understanding.extracted_info.get("category")
+            memory.start_new_intent(user_message, category)
+            if memory.current_intent:
+                memory.current_intent.merge_constraints(understanding.extracted_info)
+                memory.current_intent.keywords_en = (
+                    understanding.merged_search_query_en.split()[:5]
+                    if understanding.merged_search_query_en else []
+                )
+                logger.info(f"UnderstandNode: Created intent from refine_search (no prior intent existed)")
+    elif has_search_context and not memory.current_intent:
+        # AGENTIC: If message has search context but no intent exists, create one
+        # This handles consultation/clarification flows that build up search intent
+        category = understanding.extracted_info.get("category")
+        memory.start_new_intent(user_message, category)
+        if memory.current_intent and understanding.extracted_info:
+            memory.current_intent.merge_constraints(understanding.extracted_info)
+            memory.current_intent.keywords_en = (
+                understanding.merged_search_query_en.split()[:5]
+                if understanding.merged_search_query_en else []
+            )
+        logger.info(f"UnderstandNode: Created intent from context-bearing message (type={understanding.message_type})")
     
-    # Conditional routing from router
-    graph.add_conditional_edges(
-        "router",
-        route_query,
+    logger.info(f"UnderstandNode: route={route}, type={understanding.message_type}")
+    
+    return {
+        "understanding": understanding,
+        "memory": memory,
+        "route": route,
+        "search_query": understanding.merged_search_query_en
+    }
+
+
+def route_decision(state: GraphState) -> str:
+    """Conditional routing based on understanding."""
+    route = state.get("route", "clarification")
+    logger.info(f"RouteDecision: {route}")
+    return route
+
+
+@safe_node
+def greeting_node(state: GraphState) -> Dict[str, Any]:
+    """Handle greetings - uses LLM for natural responses (100% agentic)."""
+    user_message = state.get("user_message", "")
+    memory: SessionMemory = state.get("memory")
+    
+    # Use LLM to generate greeting response
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from ai_server.llm.llm_factory import get_llm
+    from ai_server.utils.prompt_loader import load_prompts_as_dict
+    
+    llm = get_llm(agent_name="manager")
+    
+    try:
+        prompts = load_prompts_as_dict("synthesis_prompts")
+        system_prompt = prompts.get("greeting_response", 
+            "Generate a friendly greeting as a shopping assistant. Ask what they're looking for.")
+    except Exception:
+        system_prompt = "Generate a friendly greeting as a shopping assistant."
+    
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Customer said: '{user_message}'. Generate a welcoming response.")
+        ]
+        response = llm.invoke(messages)
+        greeting = response.content.strip()
+        
+        if "<think>" in greeting:
+            greeting = greeting.split("</think>")[-1].strip()
+    except Exception as e:
+        logger.error(f"GreetingNode: LLM failed: {e}")
+        greeting = "Hello! I'm your AI Shopping Assistant. How can I help you today?"
+    
+    if memory:
+        memory.add_assistant_message(greeting)
+    
+    logger.info("GreetingNode: Generated greeting (agentic)")
+    
+    # Build artifacts for consistent API response
+    artifacts = {
+        "final_report": {
+            "type": "greeting_response",
+            "content": greeting,
+            "summary": greeting[:200] if greeting else "Greeting",
+            "follow_up_suggestions": [
+                "I'm looking for electronics",
+                "Help me find a gift",
+                "Show me today's deals"
+            ]
+        }
+    }
+    
+    return {
+        "final_response": greeting,
+        "memory": memory,
+        "artifacts": artifacts,
+        "route": "end"
+    }
+
+
+@safe_node
+def search_node(state: GraphState) -> Dict[str, Any]:
+    """Execute search using merged query from understanding OR memory's accumulated context."""
+    understanding: QueryUnderstanding = state.get("understanding")
+    memory: SessionMemory = state.get("memory")
+    
+    # Primary: use understanding's merged query
+    search_query = understanding.merged_search_query_en or state.get("search_query", "")
+    
+    # Fallback: use memory's accumulated intent (for confirmation messages)
+    if not search_query and memory and memory.current_intent:
+        intent = memory.current_intent
+        # Build query from accumulated constraints
+        keywords = intent.get_merged_keywords()
+        category = intent.category or ""
+        
+        if keywords or category:
+            search_query = f"{category} {keywords}".strip()
+            logger.info(f"SearchNode: Using accumulated query from memory: '{search_query}'")
+    
+    if not search_query:
+        logger.warning("SearchNode: No search query provided")
+        return {
+            "route": "clarification",
+            "memory": memory
+        }
+    
+    logger.info(f"SearchNode: Searching for '{search_query}'")
+    
+    # Create workspace for SearchAgent (bridge to existing code)
+    from ai_server.schemas.shared_workspace import SharedWorkspace, DevelopmentPlan
+    from ai_server.schemas.conversation_context import ConversationContext
+    
+    workspace = SharedWorkspace(
+        goal=search_query,
+        search_query=search_query,
+        user_message=state.get("user_message", ""),
+        plan=DevelopmentPlan(goal=search_query, steps=[]),
+        conversation=ConversationContext()
+    )
+    
+    # Execute search
+    result = searcher.search(workspace)
+    
+    # Convert candidates to ShownProducts and store in memory
+    shown_products = []
+    for c in result.candidates[:10]:
+        product = ShownProduct(
+            asin=c.asin,
+            title=c.title,
+            price=c.price,
+            image_url=c.source_data.get("image") if c.source_data else None,
+            rating=c.source_data.get("rating") if c.source_data else None
+        )
+        shown_products.append(product)
+    
+    if memory:
+        memory.add_shown_products(shown_products)
+    
+    logger.info(f"SearchNode: Found {len(shown_products)} products")
+    
+    return {
+        "candidates": result.candidates,
+        "shown_products": shown_products,
+        "memory": memory,
+        "route": "analyze"
+    }
+
+
+@safe_node
+def analyze_node(state: GraphState) -> Dict[str, Any]:
+    """Analyze and rank candidates."""
+    candidates = state.get("candidates", [])
+    memory: SessionMemory = state.get("memory")
+    
+    if not candidates:
+        return {
+            "route": "synthesize",
+            "memory": memory
+        }
+    
+    # Use advisor to enrich candidates
+    from ai_server.schemas.shared_workspace import SharedWorkspace, DevelopmentPlan
+    from ai_server.schemas.conversation_context import ConversationContext
+    
+    workspace = SharedWorkspace(
+        goal=state.get("search_query", ""),
+        candidates=candidates,
+        plan=DevelopmentPlan(goal="analyze", steps=[]),
+        conversation=ConversationContext()
+    )
+    
+    result = advisor.analyze(workspace)
+    
+    return {
+        "candidates": result.candidates,
+        "memory": memory,
+        "route": "synthesize"
+    }
+
+
+@safe_node
+def consultation_node(state: GraphState) -> Dict[str, Any]:
+    """Consultation about shown products - uses external prompts (100% agentic)."""
+    understanding: QueryUnderstanding = state.get("understanding")
+    memory: SessionMemory = state.get("memory")
+    
+    if not memory or not memory.shown_products:
+        logger.warning("ConsultationNode: No products to discuss")
+        return {
+            "final_response": "I couldn't find any products to discuss. What would you like to search for?",
+            "route": "end",
+            "memory": memory
+        }
+    
+    # Build products context
+    products_info = []
+    for i, p in enumerate(memory.shown_products[:10], 1):
+        price_str = f"${p.price}" if p.price else "N/A"
+        rating_str = f"{p.rating}★" if p.rating else ""
+        products_info.append(f"{i}. {p.title} - {price_str} {rating_str}")
+    
+    products_context = "\n".join(products_info)
+    
+    # Generate consultation response using external prompts
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from ai_server.llm.llm_factory import get_llm
+    from ai_server.utils.prompt_loader import load_prompts_as_dict
+    
+    llm = get_llm(agent_name="manager")
+    
+    consultation_type = understanding.consultation_type or "general"
+    question = understanding.consultation_question or state.get("user_message", "")
+    
+    # Load prompts from external file
+    try:
+        prompts = load_prompts_as_dict("consultation_prompts")
+        system_prompt = prompts.get("system_prompt", "You are an AI Shopping Assistant.")
+        user_template = prompts.get("user_prompt_template", "{products_context}\n{question}")
+    except Exception as e:
+        logger.warning(f"ConsultationNode: Failed to load prompts: {e}")
+        system_prompt = "You are an AI Shopping Assistant. Help the customer compare products."
+        user_template = "Products:\n{products_context}\n\nQuestion: {question}"
+    
+    user_prompt = user_template.format(
+        products_context=products_context,
+        question=question,
+        consultation_type=consultation_type
+    )
+    
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        response = llm.invoke(messages)
+        consultation_response = response.content
+        
+        # Clean think blocks
+        if "<think>" in consultation_response:
+            consultation_response = consultation_response.split("</think>")[-1].strip()
+        
+    except Exception as e:
+        logger.error(f"ConsultationNode: LLM failed: {e}")
+        consultation_response = "Sorry, I couldn't provide consultation at this time."
+    
+    if memory:
+        memory.add_assistant_message(consultation_response)
+    
+    logger.info("ConsultationNode: Generated consultation response")
+    
+    # Build artifacts for consistent API response
+    artifacts = {
+        "final_report": {
+            "type": "consultation_response",
+            "content": consultation_response,
+            "summary": consultation_response[:200] if consultation_response else "Consultation",
+            "follow_up_suggestions": [
+                "Show me more options",
+                "Compare these products",
+                "Search for something else"
+            ]
+        }
+    }
+    
+    return {
+        "final_response": consultation_response,
+        "memory": memory,
+        "artifacts": artifacts,
+        "route": "end"
+    }
+
+
+@safe_node
+def pre_search_consultation_node(state: GraphState) -> Dict[str, Any]:
+    """
+    Pre-search consultation node - provides expert advice before searching.
+    
+    This node is triggered when we have some information but not enough
+    to execute a search confidently. It provides consultation advice
+    and may ask final clarifying questions.
+    """
+    memory: SessionMemory = state.get("memory")
+    understanding: QueryUnderstanding = state.get("understanding")
+    user_message = state.get("user_message", "")
+    
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from ai_server.llm.llm_factory import get_llm
+    from ai_server.utils.prompt_loader import load_prompts_as_dict
+    
+    llm = get_llm(agent_name="manager")
+    
+    # Build context for consultation
+    original_query = ""
+    category = "unknown"
+    known_constraints = []
+    
+    if memory and memory.current_intent:
+        original_query = memory.current_intent.original_query or user_message
+        category = memory.current_intent.category or "unknown"
+        for key, value in memory.current_intent.constraints.items():
+            if value:
+                known_constraints.append(f"- {key}: {value}")
+    else:
+        original_query = user_message
+    
+    # Get conversation context
+    conversation_context = ""
+    if memory and memory.turns:
+        recent = memory.get_recent_turns(4)
+        conversation_context = "\n".join(
+            f"{t.role.title()}: {t.content[:80]}..." if len(t.content) > 80 else f"{t.role.title()}: {t.content}"
+            for t in recent
+        )
+    
+    # Load prompts
+    try:
+        prompts = load_prompts_as_dict("pre_search_consultation_prompts")
+        system_prompt = prompts.get("system_prompt", "")
+        user_template = prompts.get("user_prompt_template", "")
+    except Exception as e:
+        logger.warning(f"PreSearchConsultationNode: Failed to load prompts: {e}")
+        system_prompt = """You are an AI Shopping Consultant. The customer is shopping but needs advice before searching.
+        Acknowledge their needs, provide helpful suggestions, and ask if they're ready to search."""
+        user_template = "Original request: {original_query}\nKnown info: {known_constraints}\nProvide helpful consultation."
+    
+    # Build user prompt
+    user_prompt = user_template.format(
+        original_query=original_query,
+        category=category,
+        known_constraints="\n".join(known_constraints) if known_constraints else "None gathered yet",
+        missing_info="(to be determined by LLM)",
+        conversation_context=conversation_context or "New conversation"
+    )
+    
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        response = llm.invoke(messages)
+        consultation_response = response.content.strip()
+        
+        # Clean think blocks
+        if "<think>" in consultation_response:
+            consultation_response = consultation_response.split("</think>")[-1].strip()
+        
+    except Exception as e:
+        logger.error(f"PreSearchConsultationNode: LLM failed: {e}")
+        consultation_response = (
+            f"I understand you're looking for {category or 'products'}. "
+            "Before I search, could you tell me a bit more about your preferences? "
+            "Or if you're ready, just say 'search' and I'll find options for you!"
+        )
+    
+    if memory:
+        memory.add_assistant_message(consultation_response)
+    
+    logger.info("PreSearchConsultationNode: Generated consultation response (agentic)")
+    
+    # Build artifacts for consistent API response
+    artifacts = {
+        "final_report": {
+            "type": "pre_search_consultation_response",
+            "content": consultation_response,
+            "summary": consultation_response[:200] if consultation_response else "Pre-search consultation",
+            "follow_up_suggestions": [
+                "Ok, search now",
+                "Let me add more details",
+                "Show me popular options first"
+            ]
+        }
+    }
+    
+    return {
+        "final_response": consultation_response,
+        "memory": memory,
+        "artifacts": artifacts,
+        "route": "end"
+    }
+
+
+@safe_node
+def clarification_node(state: GraphState) -> Dict[str, Any]:
+    """Ask for clarification - uses LLM to generate context-aware questions (100% agentic)."""
+    memory: SessionMemory = state.get("memory")
+    understanding: QueryUnderstanding = state.get("understanding")
+    user_message = state.get("user_message", "")
+    
+    # Use LLM-powered ClarificationAgent
+    from ai_server.agents.clarification_agent import get_clarification_agent
+    
+    clarification_agent = get_clarification_agent()
+    result = clarification_agent.generate_questions(memory, user_message)
+    
+    # Build response from LLM-generated questions
+    if result.questions:
+        response = "\n".join(f"- {q}" for q in result.questions)
+    else:
+        # Fallback if LLM returned no questions
+        response = "What type of product are you looking for?"
+    
+    if memory:
+        memory.add_assistant_message(response)
+    
+    logger.info(f"ClarificationNode: Generated {len(result.questions)} questions (agentic)")
+    
+    # Build artifacts for consistent API response
+    artifacts = {
+        "final_report": {
+            "type": "clarification_response",
+            "content": response,
+            "summary": response[:200] if response else "Clarification",
+            "follow_up_suggestions": result.questions[:3] if result.questions else []
+        }
+    }
+    
+    return {
+        "final_response": response,
+        "memory": memory,
+        "artifacts": artifacts,
+        "route": "end"
+    }
+
+
+@safe_node
+def synthesize_node(state: GraphState) -> Dict[str, Any]:
+    """Generate final response with product recommendations - uses LLM (100% agentic)."""
+    candidates = state.get("candidates", [])
+    memory: SessionMemory = state.get("memory")
+    understanding: QueryUnderstanding = state.get("understanding")
+    search_query = state.get("search_query", "")
+    
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from ai_server.llm.llm_factory import get_llm
+    from ai_server.utils.prompt_loader import load_prompts_as_dict
+    
+    llm = get_llm(agent_name="manager")
+    
+    # Load prompts
+    try:
+        prompts = load_prompts_as_dict("synthesis_prompts")
+    except Exception:
+        prompts = {}
+    
+    if not candidates:
+        # No results case
+        no_results_prompt = prompts.get("no_results_response",
+            "No products found. Suggest alternatives or ask what else they're looking for.")
+        
+        try:
+            messages = [
+                SystemMessage(content=no_results_prompt),
+                HumanMessage(content=f"Search query was: '{search_query}'")
+            ]
+            resp = llm.invoke(messages)
+            response = resp.content.strip()
+            if "<think>" in response:
+                response = response.split("</think>")[-1].strip()
+        except Exception:
+            response = "Sorry, I couldn't find matching products. Would you like to try a different search?"
+    else:
+        # Build products list
+        products_list = []
+        for i, c in enumerate(candidates[:5], 1):
+            price_str = f"${c.price}" if c.price else "N/A"
+            products_list.append(f"{i}. {c.title} - {price_str}")
+        
+        system_prompt = prompts.get("system_prompt",
+            "Present these products to the customer in a helpful, conversational way.")
+        user_template = prompts.get("user_prompt_template",
+            "Search: {search_query}\n\nProducts:\n{products_list}")
+        
+        user_prompt = user_template.format(
+            search_query=search_query,
+            products_list="\n".join(products_list)
+        )
+        
+        try:
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            resp = llm.invoke(messages)
+            response = resp.content.strip()
+            if "<think>" in response:
+                response = response.split("</think>")[-1].strip()
+        except Exception as e:
+            logger.error(f"SynthesizeNode: LLM failed: {e}")
+            # Fallback: simple list
+            response = "Here are the products I found:\n" + "\n".join(products_list)
+    
+    if memory:
+        memory.add_assistant_message(response)
+    
+    logger.info("SynthesizeNode: Generated response (agentic)")
+    
+    # Build artifacts structure for server.py compatibility
+    artifacts = {
+        "final_report": {
+            "type": "recommendation_report" if candidates else "no_results_report",
+            "content": response,  # This becomes final_answer
+            "summary": response[:200] if response else "No summary",
+            "follow_up_suggestions": [
+                "Would you like me to search for something else?",
+                "Need more details on any of these products?"
+            ] if candidates else [
+                "Try a different search term",
+                "Let me know what you're looking for"
+            ]
+        }
+    }
+    
+    return {
+        "final_response": response,
+        "candidates": candidates,
+        "memory": memory,
+        "artifacts": artifacts,
+        "route": "end"
+    }
+
+
+def build_graph():
+    """Build the agentic shopping graph."""
+    
+    workflow = StateGraph(GraphState)
+    
+    # Add nodes
+    workflow.add_node("understand", understand_node)
+    workflow.add_node("greeting", greeting_node)
+    workflow.add_node("search", search_node)
+    workflow.add_node("analyze", analyze_node)
+    workflow.add_node("consultation", consultation_node)
+    workflow.add_node("clarification", clarification_node)
+    workflow.add_node("pre_search_consultation", pre_search_consultation_node)  # NEW: Consultative flow
+    workflow.add_node("synthesize", synthesize_node)
+    
+    # Entry point
+    workflow.set_entry_point("understand")
+    
+    # Conditional routing from understand node
+    workflow.add_conditional_edges(
+        "understand",
+        route_decision,
         {
-            "direct_search": "quick_search",
-            "planning": "planning",
+            "greeting": "greeting",
+            "search": "search",
+            "consultation": "consultation",
             "clarification": "clarification",
-            "chitchat": "chitchat",
-            "faq": "faq",
-            "advisory": "advisory",
-            "feedback": "feedback"
+            "pre_search_consultation": "pre_search_consultation",  # NEW: Consultative flow
+            "faq": "clarification",  # TODO: Implement FAQ node
+            "order_status": "clarification",  # TODO: Implement order node
+            "confirmation": "search",  # User confirmation → proceed to search
+            "synthesize": "synthesize"
         }
     )
     
-    # Quick search path: router → quick_search → collection
-    graph.add_edge("quick_search", "collection")
+    # Search -> Analyze -> Synthesize
+    workflow.add_edge("search", "analyze")
+    workflow.add_edge("analyze", "synthesize")
     
-    # Planning path: router → planning → collection
-    graph.add_edge("planning", "collection")
+    # Terminal nodes
+    workflow.add_edge("greeting", END)
+    workflow.add_edge("consultation", END)
+    workflow.add_edge("clarification", END)
+    workflow.add_edge("pre_search_consultation", END)  # NEW: Returns to user for confirmation
+    workflow.add_edge("synthesize", END)
     
-    # Clarification path: router → clarification → END
-    graph.add_edge("clarification", END)
-    
-    # Collection branches to Intelligence nodes (Parallel) OR loops back to Planning
-    # Flow: Collection -> check_search_quality -> [Planning] OR [Review, Market, Price]
-    
-    graph.add_conditional_edges(
-        "collection",
-        check_search_quality,
-        {
-            "planning": "planning",
-            "adjust_strategy": "adjust_strategy",
-            "manual_search": "manual_search",
-            "review_intelligence": "review_intelligence",
-            "market_intelligence": "market_intelligence",
-            "price_tracking": "price_tracking"
-        }
-    )
-    
-    # Strategy loop back to planning
-    graph.add_edge("strategy_clarification", "planning")
-    graph.add_edge("adjust_strategy", "planning")
-    graph.add_edge("manual_search", "planning")
-    
-    # Feedback loop back to planning
-    graph.add_edge("feedback", "planning")
-    
-    # Converge to Analysis
-    graph.add_edge("review_intelligence", "analysis_node")
-    graph.add_edge("market_intelligence", "analysis_node")
-    graph.add_edge("price_tracking", "analysis_node")
-    
-    # Analysis -> Verify (HITL) -> Response
-    # For now, we'll just go straight to response unless we want to enforce HITL7
-    # graph.add_edge("analysis_node", "verify_analysis")
-    # graph.add_edge("verify_analysis", "response_node")
-    graph.add_edge("analysis_node", "response_node")
-    
-    graph.add_edge("response_node", END)
-    
-    # V2 Edges
-    graph.add_edge("chitchat", END)
-    graph.add_edge("faq", END)
-    graph.add_edge("advisory", END)
-    
-    # Compile with checkpointer if provided
-    return graph.compile(checkpointer=checkpointer)
+    return workflow.compile()
 
 
-def check_search_quality(state: AgentState) -> str:
-    """Conditional edge to check if search results are sufficient."""
-    products_count = state.get("products_count", 0)
-    retry_count = state.get("retry_count", 0)
-    search_status = state.get("search_status", "success")
-    
-    # HITL: If failed 2+ times, ask user for strategy
-    print(f"DEBUG: check_search_quality - status={search_status}, retry={retry_count}")
-    
-    if search_status in ["fail", "partial"]:
-        if retry_count >= 3:
-            return "manual_search" # HITL6
-        if retry_count >= 2:
-            return "adjust_strategy" # HITL5
-        return "planning" # Auto-retry
-    
-    # Parallel execution for intelligence nodes
-    # LangGraph conditional edges usually return a single node unless using map/reduce
-    # But here we want to fan-out. 
-    # NOTE: Standard conditional edges return ONE destination. 
-    # To fan-out, we need a different structure or just pick one that fans out.
-    # For now, let's route to 'review_intelligence' which will be the start of the parallel block
-    # OR we can return a list if using a specific map-reduce pattern, but let's keep it simple.
-    # We will route to 'review_intelligence' and then have edges from there? No.
-    # We need to change the graph structure to support parallel execution properly if we want all 3.
-    # For this implementation, let's chain them or pick one.
-    # Let's route to 'review_intelligence' and chain them for now to avoid complexity.
-    # review -> market -> price -> analysis
-    
-    # Actually, let's just return "review_intelligence" and chain them in the graph definition
-    # graph.add_edge("review_intelligence", "market_intelligence")
-    # graph.add_edge("market_intelligence", "price_tracking")
-    # graph.add_edge("price_tracking", "analysis_node")
-    
-    # But wait, the previous code returned a list: ["review_intelligence", ...]
-    # If LangGraph supports returning a list for parallel execution, we should use that.
-    # It seems the previous code assumed it supported it.
-    # Let's assume we want to run them.
-    
-    # To be safe and simple:
-    return "review_intelligence" 
-
-# Export compiled graph
-graph = build_graph()
 # Export compiled graph
 graph = build_graph()

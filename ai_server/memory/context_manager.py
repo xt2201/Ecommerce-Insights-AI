@@ -16,7 +16,7 @@ class HierarchicalContextManager:
     
     def __init__(self):
         self.vector_memory = VectorMemory()
-        self.llm = get_llm(agent_name="planning")
+        self.llm = get_llm(agent_name="manager")
         self.max_recent_turns = 5
         
     def add_turn(self, session: SessionState, turn: ConversationTurn) -> None:

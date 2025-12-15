@@ -1,19 +1,28 @@
-"""Collection Agent - Collects products from SerpAPI."""
+"""Collection Agent - Collects products from SerpAPI with validation."""
 
 from __future__ import annotations
 
 import logging
-from typing import Dict, Any
+import re
+from typing import Dict, Any, List
 
 from ai_server.clients.serpapi import SerpAPIClient
 from ai_server.schemas.agent_state import AgentState
+from ai_server.schemas.serpapi_schemas import (
+    validate_search_response,
+    validate_reviews_response,
+    ProductResult,
+    ValidationResult
+)
 from ai_server.core.trace import get_trace_manager, StepType
 from ai_server.memory.storage.product_store import ProductStore
+from ai_server.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Initialize product store (lazy load)
 _product_store = None
+
 
 def _get_product_store() -> ProductStore:
     global _product_store
@@ -22,8 +31,86 @@ def _get_product_store() -> ProductStore:
     return _product_store
 
 
+def _convert_validated_products(validated_products: List[ProductResult]) -> List[Dict[str, Any]]:
+    """Convert validated ProductResult objects to internal format.
+    
+    Args:
+        validated_products: List of validated ProductResult objects
+        
+    Returns:
+        List of product dictionaries in internal format
+    """
+    products = []
+    for p in validated_products:
+        product = {
+            "asin": p.asin or "",
+            "title": p.title,
+            "product_name": p.title,  # Alias for consistency
+            "brand": "",  # Brand field is extracted later from title
+            "price": p.price.value if p.price else None,
+            "price_raw": p.price.raw if p.price else None,
+            "rating": p.rating.rating if p.rating else None,
+            "reviews_count": p.rating.reviews_count if p.rating else None,
+            "link": p.link or "",
+            "is_prime": p.shipping.is_prime if p.shipping else False,
+            "source": p.source or "amazon"
+        }
+        if product["asin"]:  # Only include products with ASIN
+            products.append(product)
+    return products
+
+
+def _legacy_parse_products(search_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Legacy parsing for backward compatibility when validation fails.
+    
+    Args:
+        search_payload: Raw SerpAPI response
+        
+    Returns:
+        List of product dictionaries
+    """
+    organic_results = search_payload.get("organic_results", [])
+    products = []
+    
+    for item in organic_results:
+        # Parse price string to float
+        price_str = item.get("price_string") or item.get("price") or ""
+        price_val = None
+        if price_str:
+            try:
+                # Use regex to extract the first valid price number
+                match = re.search(r"[\d,]+\.\d{2}", str(price_str))
+                if match:
+                    clean_price = match.group(0).replace(",", "")
+                    price_val = float(clean_price)
+                else:
+                    # Fallback for simple integers or other formats
+                    clean_price = re.sub(r"[^\d.]", "", str(price_str))
+                    if clean_price:
+                        price_val = float(clean_price)
+            except (ValueError, AttributeError):
+                pass
+        
+        title = item.get("title") or ""
+        
+        product = {
+            "asin": item.get("asin") or item.get("product_id") or "",
+            "title": title,
+            "product_name": title,
+            "brand": "",
+            "price": price_val,
+            "rating": item.get("rating"),
+            "reviews_count": item.get("reviews_count") or item.get("reviews"),
+            "link": item.get("link") or ""
+        }
+        if product["asin"]:
+            products.append(product)
+    
+    return products
+
+
 def collect_products(state: AgentState) -> AgentState:
-    """Collection Agent with product search.
+    """Collection Agent with product search and validation.
     
     Args:
         state: Current agent state with search_plan
@@ -53,7 +140,7 @@ def collect_products(state: AgentState) -> AgentState:
     # Get search parameters
     keywords = search_plan.get("keywords", user_query)
     if isinstance(keywords, list):
-        keywords = keywords[0]  # Use first keyword
+        keywords = " ".join(keywords)  # Join all keywords for better search context
     
     domain = search_plan.get("amazon_domain", "amazon.com")
     
@@ -61,60 +148,52 @@ def collect_products(state: AgentState) -> AgentState:
     requirements = search_plan.get("requirements", {})
     brand_preferences = requirements.get("brand_preferences", [])
     
+    # Initialize containers
+    products = []
+    reviews_data = {}
+    offers_data = {}
+    validation_warnings = []
+    
     try:
         # Execute search
         logger.info(f"Searching for: {keywords} on {domain}")
-        search_payload = serp_client.search_products(
-            q=keywords,
-            amazon_domain=domain,
-            num=10
-        )
+        logger.debug(f"Calling SerpAPI with params: q={keywords}, domain={domain}")
+        try:
+            search_payload = serp_client.search_products(
+                q=keywords,
+                amazon_domain=domain,
+                num=10
+            )
+            raw_count = len(search_payload.get("organic_results", []))
+            logger.info(f"DEBUG: SerpAPI returned {raw_count} raw items")
+            logger.debug("SerpAPI call returned successfully")
+        except Exception as e:
+            logger.error(f"SerpAPI call raised exception: {e}")
+            raise e
         
-        # Extract products from organic_results
-        organic_results = search_payload.get("organic_results", [])
+        # ===== DATA VALIDATION LAYER =====
+        # Validate and parse SerpAPI response using Pydantic schemas
+        validation_result = validate_search_response(search_payload)
         
-        # Convert to product dictionaries with required fields
-        products = []
-        for item in organic_results:
-            # Parse price string to float
-            price_str = item.get("price_string") or item.get("price") or ""
-            price_val = None
-            if price_str:
-                try:
-                    # Use regex to extract the first valid price number
-                    import re
-                    # Matches numbers with optional commas and decimals, e.g., 1,234.56
-                    match = re.search(r"[\d,]+\.\d{2}", str(price_str))
-                    if match:
-                        clean_price = match.group(0).replace(",", "")
-                        price_val = float(clean_price)
-                    else:
-                        # Fallback for simple integers or other formats
-                        clean_price = re.sub(r"[^\d.]", "", str(price_str))
-                        if clean_price:
-                            price_val = float(clean_price)
-                except (ValueError, AttributeError):
-                    pass
+        if not validation_result.is_valid:
+            logger.error(f"SerpAPI response validation failed: {validation_result.errors}")
+            # Fallback to legacy parsing on validation failure
+            logger.warning("Falling back to legacy parsing")
+            products = _legacy_parse_products(search_payload)
+            validation_warnings.append("Used legacy parsing due to validation failure")
+        else:
+            # Use validated data
+            validated_response = validation_result.data
             
-            title = item.get("title") or ""
+            # Log any validation warnings
+            for warning in validation_result.warnings:
+                logger.warning(f"Validation warning: {warning}")
+                validation_warnings.append(warning)
             
-            # BRAND EXTRACTION: SerpAPI Amazon engine does not return 'brand' field
-            # We rely on the title for brand identification in later stages
-            brand = ""
-            enhanced_title = title
+            # Convert validated products to internal format
+            products = _convert_validated_products(validated_response.products)
             
-            product = {
-                "asin": item.get("asin") or item.get("product_id") or "",
-                "title": enhanced_title,
-                "product_name": enhanced_title,  # Alias for consistency
-                "brand": "",  # Brand field is not available from SerpAPI organic results
-                "price": price_val,
-                "rating": item.get("rating"),
-                "reviews_count": item.get("reviews_count") or item.get("reviews"),
-                "link": item.get("link") or ""
-            }
-            if product["asin"]:  # Only include products with ASIN
-                products.append(product)
+            logger.info(f"Validated {len(products)} products (schema v{validated_response.schema_version})")
         
         logger.info(f"Found {len(products)} products")
         
@@ -131,15 +210,8 @@ def collect_products(state: AgentState) -> AgentState:
         
         # --- PHASE 1 UPGRADE: Multi-Tool Collection ---
         # If search plan requests deep dive (e.g., for reviews or offers), fetch for top products
-        
-        # Initialize data containers
-        reviews_data = {}
-        market_data = {}
-        offers_data = {}
-        
-        # Check if we need deep dive
         engines = search_plan.get("engines", [])
-        top_n = 3 # Limit deep dive to top 3 to save API calls/time
+        top_n = 3  # Limit deep dive to top 3 to save API calls/time
         
         if "amazon_product_reviews" in engines or "amazon_offers" in engines:
             logger.info(f"Performing deep dive for top {top_n} products")
@@ -147,15 +219,23 @@ def collect_products(state: AgentState) -> AgentState:
             for product in products[:top_n]:
                 asin = product["asin"]
                 
-                # Fetch Reviews
+                # Fetch Reviews with validation
                 if "amazon_product_reviews" in engines:
                     try:
                         logger.info(f"Fetching reviews for {asin}")
                         review_payload = serp_client.get_product_reviews(asin=asin, amazon_domain=domain)
-                        reviews_data[asin] = review_payload
+                        
+                        # Validate reviews response
+                        review_validation = validate_reviews_response(review_payload)
+                        if review_validation.is_valid:
+                            reviews_data[asin] = review_validation.data.model_dump()
+                        else:
+                            logger.warning(f"Review validation failed for {asin}, using raw data")
+                            reviews_data[asin] = review_payload
+                            
                     except Exception as e:
-                        if "Unsupported `amazon_product_reviews` search engine" in str(e):
-                            logger.warning(f"Review fetching skipped for {asin}: Engine not supported by API plan.")
+                        if "Unsupported" in str(e):
+                            logger.warning(f"Review fetching skipped for {asin}: Engine not supported.")
                         else:
                             logger.error(f"Failed to fetch reviews for {asin}: {e}")
                 
@@ -168,7 +248,7 @@ def collect_products(state: AgentState) -> AgentState:
                     except Exception as e:
                         logger.error(f"Failed to fetch offers for {asin}: {e}")
 
-        # Complete step with success (no token usage - Collection uses API, not LLM)
+        # Complete step with success
         if trace_id and step:
             trace_manager.complete_step(
                 trace_id=trace_id,
@@ -177,9 +257,9 @@ def collect_products(state: AgentState) -> AgentState:
                     "products_count": len(products),
                     "keywords": keywords,
                     "domain": domain,
-                    "deep_dive_count": len(reviews_data)
+                    "deep_dive_count": len(reviews_data),
+                    "validation_warnings": validation_warnings
                 }
-                # No token_usage - Collection Agent does not use LLM
             )
         
     except Exception as e:
@@ -214,15 +294,12 @@ def collect_products(state: AgentState) -> AgentState:
     if reviews_data:
         state["reviews_data"] = reviews_data
     if offers_data:
-        # We might want to store offers separately or merge into products
-        # For now, let's store in a generic 'market_data' or similar if needed
-        # But 'market_data' is for aggregated stats.
-        # Let's add 'offers_data' to state if we defined it, or just attach to products?
-        # The schema has 'market_data'. Let's put offers there for now or just attach to product objects?
-        # Attaching to product objects is cleaner for Analysis Agent.
         for p in products:
             if p["asin"] in offers_data:
                 p["offers"] = offers_data[p["asin"]].get("offers", [])
+    
+    # Store validation metadata
+    state["validation_warnings"] = validation_warnings
     
     logger.info(f"Collection Agent complete: {len(products)} products")
     

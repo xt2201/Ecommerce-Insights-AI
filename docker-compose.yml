@@ -1,4 +1,4 @@
-
+# Docker Compose Configuration for Amazon Smart Shopping Assistant
 
 services:
   backend:
@@ -11,8 +11,19 @@ services:
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./ai_server:/app/ai_server
     environment:
       - PYTHONUNBUFFERED=1
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
     networks:
       - app-network
     restart: unless-stopped
@@ -27,13 +38,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-
     container_name: ecom-frontend
     ports:
       - "3000:3000"
     environment:
-
       - NODE_ENV=production
+      - NODE_ENV=production
+      # - NEXT_PUBLIC_API_URL=http://backend:8000 # Use relative path for rewrites
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     depends_on:
       backend:
         condition: service_healthy

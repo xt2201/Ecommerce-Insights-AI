@@ -5,14 +5,14 @@ import {
   Brain, 
   CheckCircle2, 
   Circle, 
-  Clock, 
   ChevronRight, 
   ChevronLeft,
   Loader2,
   Search,
-  ShoppingCart,
   BarChart2,
-  MessageSquare
+  MessageSquare,
+  Sparkles,
+  Shield
 } from 'lucide-react';
 import { type StreamEvent } from '@/hooks/useStreamingSearch';
 
@@ -24,6 +24,23 @@ interface ThoughtProcessSidebarProps {
   currentStep: number;
 }
 
+// Agent icons and colors mapping
+const agentConfig: Record<string, { icon: string; label: string; color: string }> = {
+  'manager': { icon: '🧑‍💼', label: 'Manager', color: 'from-violet-500 to-purple-500' },
+  'search': { icon: '🔍', label: 'Searcher', color: 'from-blue-500 to-cyan-500' },
+  'collection': { icon: '📦', label: 'Collector', color: 'from-amber-500 to-orange-500' },
+  'advisor': { icon: '💡', label: 'Advisor', color: 'from-green-500 to-emerald-500' },
+  'reviewer': { icon: '✅', label: 'Reviewer', color: 'from-teal-500 to-green-500' },
+  'tools': { icon: '🛠️', label: 'Tools', color: 'from-gray-500 to-slate-500' },
+  'system': { icon: '⚙️', label: 'System', color: 'from-gray-400 to-gray-500' },
+};
+
+function getAgentInfo(nodeName?: string) {
+  if (!nodeName) return agentConfig['system'];
+  const key = Object.keys(agentConfig).find(k => nodeName.toLowerCase().includes(k));
+  return agentConfig[key || 'system'];
+}
+
 export default function ThoughtProcessSidebar({
   isOpen,
   onToggle,
@@ -32,6 +49,8 @@ export default function ThoughtProcessSidebar({
   currentStep
 }: ThoughtProcessSidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(340);
+  const [isResizing, setIsResizing] = useState(false);
 
   // Auto-scroll to bottom when new events arrive
   useEffect(() => {
@@ -40,23 +59,12 @@ export default function ThoughtProcessSidebar({
     }
   }, [events]);
 
-  // Filter relevant events (progress updates)
-  const progressEvents = events.filter(e => e.type === 'progress' || e.type === 'start' || e.type === 'complete' || e.type === 'node_output' || e.type === 'interrupt');
+  // Filter relevant events
+  const progressEvents = events.filter(e => 
+    e.type === 'progress' || e.type === 'start' || e.type === 'complete' || e.type === 'node_output'
+  );
 
-  const getStepIcon = (node?: string) => {
-    switch (node?.toLowerCase()) {
-      case 'router': return <Brain className="w-4 h-4" />;
-      case 'planning': return <Brain className="w-4 h-4" />;
-      case 'collection': return <Search className="w-4 h-4" />;
-      case 'analysis': return <BarChart2 className="w-4 h-4" />;
-      case 'response': return <MessageSquare className="w-4 h-4" />;
-      default: return <Circle className="w-4 h-4" />;
-    }
-  };
-
-  const [width, setWidth] = useState(320);
-  const [isResizing, setIsResizing] = useState(false);
-
+  // Resize handling
   const startResizing = (e: React.MouseEvent) => {
     setIsResizing(true);
     e.preventDefault();
@@ -67,7 +75,7 @@ export default function ThoughtProcessSidebar({
     const resize = (e: MouseEvent) => {
       if (isResizing) {
         const newWidth = window.innerWidth - e.clientX;
-        if (newWidth > 250 && newWidth < 600) {
+        if (newWidth > 280 && newWidth < 600) {
           setWidth(newWidth);
         }
       }
@@ -83,15 +91,18 @@ export default function ThoughtProcessSidebar({
     };
   }, [isResizing]);
 
+  // Collapsed state
   if (!isOpen) {
     return (
       <div className="absolute right-0 top-1/2 -translate-y-1/2 z-20">
         <button
           onClick={onToggle}
-          className="bg-background border border-border p-2 rounded-l-lg shadow-lg hover:bg-accent transition-colors"
+          className="bg-card border border-border p-2.5 rounded-l-xl shadow-lg 
+            hover:bg-accent hover:border-primary/30 transition-all duration-200
+            group"
           title="Show Thought Process"
         >
-          <ChevronLeft className="w-5 h-5 text-foreground" />
+          <Brain className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
         </button>
       </div>
     );
@@ -99,24 +110,36 @@ export default function ThoughtProcessSidebar({
 
   return (
     <div 
-      className="relative border-l border-border bg-card flex flex-col h-full transition-all duration-75"
-      style={{ width: width }}
+      className="relative border-l border-border bg-card/95 backdrop-blur-xl flex flex-col h-full"
+      style={{ width }}
     >
       {/* Resize Handle */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-primary/50 transition-colors z-50"
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize 
+          hover:bg-primary/50 active:bg-primary transition-colors z-50
+          group"
         onMouseDown={startResizing}
-      />
+      >
+        <div className="absolute inset-y-0 left-0 w-4 -translate-x-1/2" />
+      </div>
 
       {/* Header */}
-      <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
-        <div className="flex items-center gap-2">
-          <Brain className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold text-foreground">Thought Process</h3>
+      <div className="p-4 border-b border-border flex items-center justify-between bg-gradient-to-r from-purple-500/10 to-transparent">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 
+            flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <Brain className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-foreground text-sm">Thought Process</h3>
+            <p className="text-xs text-muted-foreground">
+              {isStreaming ? 'AI đang suy nghĩ...' : `${progressEvents.length} bước`}
+            </p>
+          </div>
         </div>
         <button
           onClick={onToggle}
-          className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground transition-colors"
+          className="p-2 rounded-lg hover:bg-accent text-muted-foreground transition-colors"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
@@ -125,71 +148,71 @@ export default function ThoughtProcessSidebar({
       {/* Content */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-6"
+        className="flex-1 overflow-y-auto p-4"
       >
         {progressEvents.length === 0 && !isStreaming ? (
-          <div className="text-center py-10 text-muted-foreground">
-            <Brain className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Start a search to see the AI's thinking process</p>
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-muted/50 flex items-center justify-center">
+              <Sparkles className="w-8 h-8 opacity-30" />
+            </div>
+            <p className="text-sm font-medium">Chưa có hoạt động</p>
+            <p className="text-xs mt-1 opacity-70">Bắt đầu tìm kiếm để xem quá trình suy nghĩ</p>
           </div>
         ) : (
-          <div className="relative border-l-2 border-border ml-3 space-y-6 pb-4">
+          <div className="space-y-4">
             {progressEvents.map((event, index) => {
               const isLast = index === progressEvents.length - 1;
               const isActive = isStreaming && isLast;
               const isOutput = event.type === 'node_output';
+              const nodeName = 'node' in event ? event.node : undefined;
+              const agent = getAgentInfo(nodeName);
               
               return (
-                <div key={index} className="relative pl-6">
-                  {/* Timeline dot */}
-                  <div className={`
-                    absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 flex items-center justify-center bg-background
+                <div 
+                  key={index} 
+                  className={`
+                    relative p-3 rounded-xl border transition-all duration-300
                     ${isActive 
-                      ? 'border-primary animate-pulse' 
-                      : isOutput ? 'border-green-500' : 'border-primary/50'
+                      ? 'bg-primary/5 border-primary/30 shadow-lg shadow-primary/10' 
+                      : 'bg-muted/30 border-border hover:bg-muted/50'
                     }
-                  `}>
-                    {isActive ? (
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
-                    ) : isOutput ? (
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                    ) : (
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-medium ${isActive ? 'text-primary' : 'text-foreground'}`}>
-                        {'node' in event ? event.node : 'System'}
-                      </span>
-                      {isActive && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+                    animate-fade-in
+                  `}
+                  style={{ animationDelay: `${index * 0.05}s` }}
+                >
+                  {/* Agent Header */}
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={`
+                      w-8 h-8 rounded-lg bg-gradient-to-br ${agent.color}
+                      flex items-center justify-center text-lg
+                      ${isActive ? 'animate-pulse' : ''}
+                    `}>
+                      {agent.icon}
                     </div>
-                    
-                    {'message' in event && event.message && (
-                      <p className="text-xs text-muted-foreground">
-                        {event.message}
-                      </p>
-                    )}
-
-                    {/* Show output if available */}
-                    {'output' in event && (event as any).output && (
-                      <div className="mt-2 p-2 bg-muted/50 rounded text-xs font-mono text-muted-foreground overflow-x-auto border border-border">
-                        {typeof (event as any).output === 'string' 
-                          ? (event as any).output 
-                          : JSON.stringify((event as any).output, null, 2)
-                        }
-                      </div>
-                    )}
-
-                    {/* Show extra details if available */}
-                    {(event as any).content && (
-                      <div className="mt-2 p-2 bg-muted/50 rounded text-xs font-mono text-muted-foreground overflow-x-auto">
-                        {(event as any).content}
-                      </div>
+                    <div className="flex-1">
+                      <span className={`text-sm font-semibold ${isActive ? 'text-primary' : 'text-foreground'}`}>
+                        {agent.label}
+                      </span>
+                      {isActive && (
+                        <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-primary" />
+                      )}
+                    </div>
+                    {!isActive && isOutput && (
+                      <CheckCircle2 className="w-4 h-4 text-positive" />
                     )}
                   </div>
+                  
+                  {/* Message */}
+                  {'message' in event && event.message && (
+                    <p className="text-xs text-muted-foreground leading-relaxed pl-11">
+                      {event.message}
+                    </p>
+                  )}
+
+                  {/* Output (collapsible) */}
+                  {(event as any).output && (
+                    <OutputDisplay output={(event as any).output} />
+                  )}
                 </div>
               );
             })}
@@ -198,16 +221,48 @@ export default function ThoughtProcessSidebar({
       </div>
 
       {/* Footer Status */}
-      <div className="p-3 border-t border-border bg-muted/30 text-xs text-center text-muted-foreground">
-        {isStreaming ? (
-          <span className="flex items-center justify-center gap-2">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            AI is thinking...
-          </span>
-        ) : (
-          <span>Ready</span>
-        )}
+      <div className="p-3 border-t border-border bg-muted/30">
+        <div className={`
+          flex items-center justify-center gap-2 text-xs font-medium
+          ${isStreaming ? 'text-primary' : 'text-positive'}
+        `}>
+          {isStreaming ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span>Đang xử lý...</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2 h-2 rounded-full bg-positive" />
+              <span>Sẵn sàng</span>
+            </>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function OutputDisplay({ output }: { output: any }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const outputStr = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+  const isLong = outputStr.length > 100;
+
+  return (
+    <div className="mt-2 pl-11">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="text-xs text-primary hover:underline flex items-center gap-1"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+        {isExpanded ? 'Ẩn output' : 'Xem output'}
+      </button>
+      {isExpanded && (
+        <div className="mt-2 p-2 bg-muted rounded-lg text-[10px] font-mono text-muted-foreground 
+          overflow-x-auto max-h-40 overflow-y-auto border border-border animate-fade-in">
+          <pre className="whitespace-pre-wrap break-words">{outputStr}</pre>
+        </div>
+      )}
     </div>
   );
 }

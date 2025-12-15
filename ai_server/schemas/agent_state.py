@@ -79,5 +79,8 @@ class AgentState(TypedDict, total=False):
     is_followup: bool  # Whether this is a follow-up query
     reference_context: Dict[str, Any]  # Context from previous turn (for "cheaper", "similar", etc.)
     
+    # Phase 4: Context Retrieval (FAISS integration)
+    retrieved_context: Dict[str, Any]  # Context from vector similarity search
+    
     # Monitoring & Tracing
     trace_id: str  # Execution trace identifier for monitoring

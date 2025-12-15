@@ -3,7 +3,7 @@
     "."
   ],
   "graphs": {
-    "shopping_assistant": "./studio.py:graph"
+    "shopping_assistant": "./ai_server/graphs/shopping_graph.py:shopping_graph"
   },
   "env": ".env",
   "http": {

@@ -25,17 +25,18 @@ class SessionManager:
         self.storage = storage_backend
         self.default_ttl = get_config_value("memory.session.default_ttl", 3600)
     
-    def create_session(self, user_id: Optional[str] = None, ttl: Optional[int] = None) -> SessionState:
+    def create_session(self, user_id: Optional[str] = None, ttl: Optional[int] = None, session_id: Optional[str] = None) -> SessionState:
         """Create a new session.
         
         Args:
             user_id: Optional user identifier
             ttl: Session time-to-live in seconds (defaults to config value)
+            session_id: Optional session ID to use (if not provided, generates UUID)
             
         Returns:
             New SessionState object
         """
-        session_id = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         session_ttl = ttl if ttl is not None else self.default_ttl
         
         session = SessionState(
@@ -85,7 +86,8 @@ class SessionManager:
             if session:
                 return session
         
-        return self.create_session(user_id=user_id)
+        # Pass the provided session_id to create_session so it's preserved
+        return self.create_session(user_id=user_id, session_id=session_id)
     
     def update_session(self, session: SessionState) -> None:
         """Update an existing session.

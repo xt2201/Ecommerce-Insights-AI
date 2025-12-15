@@ -1,4 +1,4 @@
-"""Cerebras LLM Provider."""
+"""Cerebras LLM Provider with Key Rotation."""
 
 from __future__ import annotations
 
@@ -7,52 +7,45 @@ from typing import Any, Optional
 
 from langchain_cerebras import ChatCerebras
 
-from ai_server.core.config import get_api_key, get_config_value
+from ai_server.core.config import get_config_value
+from ai_server.core.api_key_manager import (
+    get_cerebras_key,
+    report_cerebras_error,
+    report_cerebras_success
+)
 
 logger = logging.getLogger(__name__)
+
+# Track current key for error reporting
+_current_key: Optional[str] = None
 
 
 def get_cerebras_llm(
     agent_name: Optional[str] = None, 
     use_fallback_config: bool = False
 ) -> Any:
-    """Get Cerebras LLM instance.
+    """Get Cerebras LLM instance with auto-rotating API keys.
+    
+    Uses the api_key_manager for intelligent key rotation:
+    - Round-robin between available keys
+    - Skips keys with recent errors
+    - Auto-recovery after timeout
     
     Args:
         agent_name: Agent name for agent-specific config
-        use_fallback_config: If True, use llm_fallback.cerebras config instead of agent config
+        use_fallback_config: If True, use llm_fallback.cerebras config
     
     Returns:
         LangChain ChatCerebras instance
         
     Raises:
         ValueError: If required configuration is missing
-        ImportError: If langchain-cerebras is not installed
     """
-    # Get Cerebras API key from environment (support multiple keys for rotation)
-    import os
-    import random
+    global _current_key
     
-    keys = []
-    # Check main key
-    main_key = os.getenv("CEREBRAS_API_KEY")
-    if main_key:
-        keys.append(main_key)
-        
-    # Check numbered keys (1-5)
-    for i in range(1, 10):
-        key = os.getenv(f"CEREBRAS_API_KEY{i}")
-        if key:
-            keys.append(key)
-            
-    if not keys:
-        # Fallback to get_api_key which raises error if missing
-        api_key = get_api_key("CEREBRAS_API_KEY")
-        print("DEBUG: No keys found in pool, using default")
-    else:
-        api_key = random.choice(keys)
-        if len(keys) > 1:
-            logger.info(f"Selected Cerebras API Key from pool of {len(keys)} keys")
+    # Get API key using rotation manager
+    api_key = get_cerebras_key()
+    _current_key = api_key
     
     # Get model settings from config
     if use_fallback_config:
@@ -104,4 +97,29 @@ def get_cerebras_llm(
     )
 
 
-__all__ = ["get_cerebras_llm"]
+def on_cerebras_error(error: Exception) -> None:
+    """Call this when a Cerebras API call fails.
+    
+    This helps the rotation manager skip problematic keys.
+    
+    Args:
+        error: The exception that occurred
+    """
+    global _current_key
+    if _current_key:
+        is_rate_limit = "rate" in str(error).lower() or "429" in str(error)
+        report_cerebras_error(_current_key, is_rate_limit=is_rate_limit)
+        logger.warning(f"Reported error for Cerebras key: {_current_key[:8]}...")
+
+
+def on_cerebras_success() -> None:
+    """Call this when a Cerebras API call succeeds.
+    
+    This resets the error count for the current key.
+    """
+    global _current_key
+    if _current_key:
+        report_cerebras_success(_current_key)
+
+
+__all__ = ["get_cerebras_llm", "on_cerebras_error", "on_cerebras_success"]

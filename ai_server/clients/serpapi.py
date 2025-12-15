@@ -1,6 +1,6 @@
-"""Lightweight SerpAPI Amazon client.
+"""Lightweight SerpAPI Amazon client with key rotation.
 
-API key is loaded from environment (.env)
+API key is loaded from environment (.env) with rotation support.
 Configuration settings from config.yaml
 """
 
@@ -13,9 +13,15 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ai_server.core.config import ConfigurationError, get_api_key, get_config_value
+from ai_server.core.config import ConfigurationError, get_config_value
+from ai_server.core.api_key_manager import (
+    get_serp_key,
+    report_serp_error,
+    report_serp_success
+)
+from ai_server.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SerpAPIError(RuntimeError):
@@ -53,6 +59,35 @@ class SerpAPIClient:
         
         # Get engine from config
         engine = get_config_value("serpapi.engine", "amazon")
+        
+        import os
+        # Mock mode controlled by environment variable only
+        if os.getenv("MOCK_SEARCH", "").lower() == "true":
+            logger.info("MOCK_SEARCH enabled: returning mock data")
+            try:
+                import json
+                from pathlib import Path
+                mock_path = Path("data/mock_search_results.json")
+                if mock_path.exists():
+                    time.sleep(float(os.getenv("MOCK_SEARCH_DELAY", "0.5")))
+                    with open(mock_path) as f:
+                        mock_items = json.load(f)
+                        
+                    # Filter mock items by query roughly
+                    query = str(params.get('q', '')).lower()
+                    
+                    if query == "fail_test":
+                        return {"organic_results": []}
+                        
+                    return {
+                        "organic_results": mock_items,
+                        "search_metadata": {
+                            "status": "Success",
+                            "total_results": len(mock_items)
+                        }
+                    }
+            except Exception as e:
+                logger.error(f"Failed to load mock data: {e}")
         
         payload = {"engine": engine, **params}
         return self._perform_request(payload)
@@ -111,14 +146,21 @@ class SerpAPIClient:
                     logger.warning(f"SerpAPI Error Body: {exc.response.text}")
                     # Do not retry on 4xx client errors
                     if 400 <= exc.response.status_code < 500:
+                        # Report error to rotation manager
+                        is_rate_limit = exc.response.status_code == 429
+                        report_serp_error(api_key, is_rate_limit=is_rate_limit)
                         raise SerpAPIError(f"SerpAPI Client Error: {exc} - Body: {exc.response.text}") from exc
                 last_error = exc
             else:
                 if payload.get("error"):
                     error_msg = payload["error"]
                     logger.error(f"SerpAPI returned error: {error_msg}")
+                    # Report error to rotation manager
+                    report_serp_error(api_key, is_rate_limit="rate" in str(error_msg).lower())
                     last_error = SerpAPIError(str(error_msg))
                 else:
+                    # Success - report to rotation manager
+                    report_serp_success(api_key)
                     return payload
 
             if attempt < self._settings.max_retries:
@@ -128,10 +170,10 @@ class SerpAPIClient:
         raise SerpAPIError("SerpAPI request failed") from last_error
 
     def _resolve_api_key(self) -> str:
-        """Get SerpAPI key from environment."""
+        """Get SerpAPI key using rotation manager."""
         try:
-            return get_api_key("SERP_API_KEY")
-        except ConfigurationError as exc:  # pragma: no cover - configuration validated elsewhere
+            return get_serp_key()
+        except ValueError as exc:
             raise SerpAPIError("SerpAPI API key missing from environment") from exc
 
 

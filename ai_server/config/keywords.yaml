@@ -1,0 +1,236 @@
+# =============================================================================
+# DOMAIN KNOWLEDGE FOR LLM CONTEXT
+# This file provides domain knowledge that LLM uses for understanding
+# NO regex patterns - LLM handles classification directly
+# =============================================================================
+
+# Product Categories with Vietnamese and English terms
+categories:
+  clothing:
+    - áo
+    - quần
+    - váy
+    - đầm
+    - jacket
+    - bomber
+    - hoodie
+    - shirt
+    - pants
+    - dress
+    - coat
+    - áo khoác
+    - sweater
+    - cardigan
+    - blazer
+  
+  shoes:
+    - giày
+    - dép
+    - sneaker
+    - boots
+    - sandal
+    - slip-on
+    - loafer
+    - running shoes
+    - basketball shoes
+  
+  electronics:
+    - điện thoại
+    - laptop
+    - máy tính
+    - phone
+    - computer
+    - tablet
+    - ipad
+    - macbook
+  
+  headphones:
+    - tai nghe
+    - headphone
+    - earbuds
+    - airpods
+    - earphone
+  
+  accessories:
+    - phụ kiện
+    - túi
+    - ví
+    - đồng hồ
+    - watch
+    - bag
+    - wallet
+    - belt
+    - thắt lưng
+
+# Known Brands by Category
+brands:
+  fashion:
+    - Nike
+    - Adidas
+    - Zara
+    - H&M
+    - Uniqlo
+    - Gucci
+    - Prada
+    - Louis Vuitton
+    - Balenciaga
+    - Off-White
+    - Supreme
+    - The North Face
+    - Patagonia
+    - Levi's
+    - GAP
+  
+  electronics:
+    - Apple
+    - Samsung
+    - Sony
+    - LG
+    - Asus
+    - Dell
+    - HP
+    - Lenovo
+    - Microsoft
+    - Google
+    - Xiaomi
+    - Oppo
+    - Vivo
+  
+  audio:
+    - Bose
+    - Sony
+    - JBL
+    - Beats
+    - Sennheiser
+    - Audio-Technica
+    - AirPods
+    - Jabra
+
+# Fashion Styles (for clothing recommendations)
+styles:
+  casual:
+    - thường ngày
+    - thoải mái
+    - everyday
+    - relaxed
+  
+  formal:
+    - công sở
+    - lịch sự
+    - sang trọng
+    - business
+    - professional
+  
+  sporty:
+    - thể thao
+    - sport
+    - gym
+    - active
+    - athletic
+  
+  streetwear:
+    - đường phố
+    - street
+    - urban
+    - hype
+
+# Clothing Types (specific product types)
+clothing_types:
+  outerwear:
+    - bomber
+    - hoodie
+    - jacket
+    - coat
+    - blazer
+    - cardigan
+    - parka
+    - windbreaker
+  
+  tops:
+    - shirt
+    - t-shirt
+    - polo
+    - blouse
+    - áo sơ mi
+    - áo thun
+  
+  bottoms:
+    - pants
+    - jeans
+    - shorts
+    - skirt
+    - quần dài
+    - quần short
+
+# Gender Keywords (for context understanding)
+gender:
+  male:
+    - nam
+    - male
+    - men
+    - con trai
+    - for him
+    - man
+  
+  female:
+    - nữ
+    - female
+    - women
+    - con gái
+    - for her
+    - woman
+
+# Age Groups
+age_groups:
+  teen:
+    - teen
+    - tuổi teen
+    - thanh niên
+    - young
+    - teenager
+    - học sinh
+    - sinh viên
+  
+  adult:
+    - người lớn
+    - adult
+    - trưởng thành
+    - mature
+  
+  senior:
+    - người già
+    - senior
+    - elderly
+
+# Intent Examples (for LLM reference)
+intents:
+  greeting:
+    - "hello"
+    - "hi"
+    - "xin chào"
+    - "bạn có thể giúp tôi không"
+    - "who are you"
+  
+  product_search:
+    - "I want to buy a laptop"
+    - "tìm áo khoác mùa đông"
+    - "best running shoes under $100"
+    - "recommend me a phone"
+  
+  faq:
+    - "what is your return policy"
+    - "how do I return an item"
+    - "do you ship internationally"
+    - "chính sách bảo hành"
+  
+  order_status:
+    - "where is my order"
+    - "track my package"
+    - "order ORD-12345 status"
+    - "đơn hàng của tôi đâu rồi"
+  
+  vague_query:
+    - "tôi muốn mua đồ"
+    - "I want to buy something"
+    - "help me shop"
+    - "tìm quần áo"

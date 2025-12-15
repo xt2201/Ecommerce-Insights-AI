@@ -19,6 +19,7 @@ from ai_server.core.config import load_config, get_config_value
 from ai_server.core.telemetry import configure_langsmith
 from ai_server.memory.session_manager import SessionManager
 from ai_server.memory.conversation_memory import ConversationMemory
+from ai_server.schemas.session_memory import SessionMemory
 from ai_server.utils.logger import (
     get_logger,
     get_request_logger,
@@ -86,7 +87,14 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:3004",
+        "http://localhost:3005",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -180,6 +188,9 @@ class ShoppingResponse(BaseModel):
     alternatives: Optional[List[ProductInfo]] = None
     total_results: int
     search_metadata: Optional[Dict[str, Any]] = None
+    red_flags: Optional[List[str]] = None
+    follow_up_suggestions: Optional[List[str]] = None
+    final_answer: Optional[str] = None
 
 
 # ============================================================================
@@ -231,12 +242,32 @@ async def search_products(request: ShoppingRequest):
         # Build and run graph
         graph = build_graph()
         
-        # Prepare initial state with session context
+        # Load or create SessionMemory from persisted data
+        if session.session_memory_data:
+            try:
+                memory = SessionMemory.model_validate(session.session_memory_data)
+                logger.info(f"Loaded SessionMemory for session {session_id} with {memory.turn_count} turns, intent active: {memory.current_intent.is_active if memory.current_intent else False}")
+            except Exception as e:
+                logger.warning(f"Failed to load SessionMemory, creating new: {e}")
+                memory = SessionMemory(session_id=session_id)
+        else:
+            memory = SessionMemory(session_id=session_id)
+            logger.info(f"Created new SessionMemory for session {session_id}")
+        
+        # Prepare initial state with persisted memory
         initial_state = {
+            "user_message": request.query,  # Required by graph
             "user_query": request.query,
+            "goal": request.query,  # Initialize goal with query
+            "plan": {
+                "goal": request.query,
+                "steps": ["analyze_request"],
+                "status": "planning"
+            },
             "session_id": session_id,
             "user_preferences": session.user_preferences,
             "previous_queries": session.conversation_history.get_recent_queries(5),
+            "memory": memory,  # Pass persisted SessionMemory
         }
         
         # Run graph
@@ -246,16 +277,37 @@ async def search_products(request: ShoppingRequest):
             initial_state
         )
         
-        # Extract products from result
-        matched_products = result.get("matched_products", [])
-        recommendation = result.get("recommendation", {})
+        # Extract products from result (SharedWorkspace)
+        candidates = result.get("candidates", [])
+        artifacts = result.get("artifacts", {})
+        final_report = artifacts.get("final_report", {})
         
+        # Map candidates to matched_products
+        matched_products = []
+        for c in candidates:
+            # Handle both dict (if serialized) and object
+            c_data = c.dict() if hasattr(c, "dict") else c
+            source_data = c_data.get("source_data", {})
+            
+            matched_products.append({
+                "title": c_data.get("title"),
+                "link": source_data.get("link", ""),
+                "price": str(c_data.get("price", "")),
+                "rating": source_data.get("rating"),
+                "reviews": source_data.get("reviews"),
+                "image": source_data.get("image"),
+                "position": source_data.get("position"),
+                "source": source_data.get("source"),
+                "delivery": source_data.get("delivery"),
+                "thumbnail": source_data.get("thumbnail"),
+            })
+
         logger.info(
             f"Search completed",
             extra={
                 "session_id": session_id,
                 "total_results": len(matched_products),
-                "has_recommendation": bool(recommendation)
+                "report_type": final_report.get("type")
             }
         )
         
@@ -275,40 +327,40 @@ async def search_products(request: ShoppingRequest):
     try:
         # Convert to response format
         products = [
-            ProductInfo(
-                title=p.get("title", ""),
-                link=p.get("link", ""),
-                price=p.get("price", ""),
-                rating=p.get("rating"),
-                reviews=p.get("reviews"),
-                image=p.get("image"),
-                position=p.get("position"),
-                source=p.get("source"),
-                delivery=p.get("delivery"),
-                thumbnail=p.get("thumbnail"),
-            )
-            for p in matched_products[:10]  # Limit to top 10
+            ProductInfo(**p) for p in matched_products[:10]
         ]
         
-        # Get recommended product
-        rec_product = recommendation.get("product", {})
-        if rec_product:
+        # Construct RecommendationInfo from final_report
+        report_type = final_report.get("type")
+        
+        if report_type == "informational_response":
+            # For RAG/Tool responses, create a virtual product or generic info
             rec_info = RecommendationInfo(
                 recommended_product=ProductInfo(
-                    title=rec_product.get("title", ""),
-                    link=rec_product.get("link", ""),
-                    price=rec_product.get("price", ""),
-                    rating=rec_product.get("rating"),
-                    reviews=rec_product.get("reviews"),
-                    image=rec_product.get("image"),
+                    title="Information Found",
+                    link="",
+                    price="",
+                    image="https://cdn-icons-png.flaticon.com/512/471/471664.png" # Info icon
                 ),
-                value_score=recommendation.get("value_score", 0.0),
-                reasoning=recommendation.get("reasoning", ""),
-                explanation=recommendation.get("explanation", ""),
-                tradeoff_analysis=recommendation.get("tradeoff_analysis"),
+                value_score=1.0,
+                reasoning=final_report.get("summary", "No information found."),
+                explanation="Information Request",
+                tradeoff_analysis=None
+            )
+            # Clear products list to avoid confusing the frontend
+            products = []
+        elif report_type == "recommendation_report" and products:
+            # Use the first top pick as recommendation
+            top_pick = products[0]
+            rec_info = RecommendationInfo(
+                recommended_product=top_pick,
+                value_score=0.95, # Placeholder, ideally from report
+                reasoning=final_report.get("summary", "Best option based on your criteria."),
+                explanation=f"We recommend {top_pick.title} because it best matches your needs.",
+                tradeoff_analysis=None
             )
         else:
-            # Fallback if no specific recommendation
+            # Fallback
             rec_info = RecommendationInfo(
                 recommended_product=products[0] if products else ProductInfo(
                     title="No products found",
@@ -328,6 +380,8 @@ async def search_products(request: ShoppingRequest):
             alternatives=products[1:4] if len(products) > 1 else None,
             total_results=len(matched_products),
             search_metadata=result.get("metadata", {}),
+            final_answer=final_report.get("content", ""),  # Add final_answer from graph output
+            follow_up_suggestions=final_report.get("follow_up_suggestions", []),  # Add suggestions
         )
         
         # Update session with conversation turn
@@ -338,7 +392,14 @@ async def search_products(request: ShoppingRequest):
             search_plan=result.get("search_plan"),
             products_found=len(matched_products),
             top_recommendation=top_recommendation,
+            matched_products=[p.dict() for p in products], # Store minimal product info
         )
+        
+        # Persist SessionMemory back to session
+        updated_memory = result.get("memory")
+        if updated_memory:
+            session.session_memory_data = updated_memory.model_dump(mode="json")
+            logger.info(f"Persisted SessionMemory with {updated_memory.turn_count} turns, intent active: {updated_memory.current_intent.is_active if updated_memory.current_intent else False}")
         
         # Save session
         session_manager.update_session(session)
@@ -354,7 +415,7 @@ async def search_products(request: ShoppingRequest):
             "inputs": {"query": request.query},
             "outputs": {
                 "total_results": len(matched_products),
-                "has_recommendation": bool(recommendation),
+                "has_recommendation": bool(rec_info),
             },
             "duration_ms": None,  # Can add timing if needed
         })
@@ -387,6 +448,15 @@ async def search_products_stream(request: ShoppingRequest):
     """
     session_id = request.session_id or f"session_{datetime.now().timestamp()}"
     
+    # Get or create session to access preferences and history
+    if not session_manager:
+        raise HTTPException(status_code=500, detail="Session manager not initialized")
+        
+    session = session_manager.get_or_create_session(
+        session_id=session_id,
+        user_id=request.user_preferences.get("user_id") if request.user_preferences else None
+    )
+    
     logger.info(
         f"Streaming search started",
         extra={
@@ -404,32 +474,204 @@ async def search_products_stream(request: ShoppingRequest):
             # Build graph
             graph = build_graph()
             
-            # Prepare initial state
+            # Load or create SessionMemory from persisted data
+            if session.session_memory_data:
+                try:
+                    memory = SessionMemory.model_validate(session.session_memory_data)
+                    logger.info(f"Loaded SessionMemory for session {session_id} with {memory.turn_count} turns, intent active: {memory.current_intent.is_active if memory.current_intent else False}")
+                except Exception as e:
+                    logger.warning(f"Failed to load SessionMemory, creating new: {e}")
+                    memory = SessionMemory(session_id=session_id)
+            else:
+                memory = SessionMemory(session_id=session_id)
+                logger.info(f"Created new SessionMemory for session {session_id}")
+            
+            # Prepare initial state with persisted memory
             initial_state = {
+                "user_message": request.query,  # Required by graph
                 "user_query": request.query,
+                "goal": request.query,  # Initialize goal
+                "plan": {
+                    "goal": request.query,
+                    "steps": ["analyze_request"],
+                    "status": "planning"
+                },
                 "session_id": session_id,
+                "user_preferences": session.user_preferences, # Pass preferences
+                "previous_queries": session.conversation_history.get_recent_queries(5),
+                "memory": memory,  # Pass persisted SessionMemory
             }
             
             # Stream events from graph
             step_count = 0
+            final_state = None
+            
             async for event in graph.astream_events(initial_state, version="v2"):
                 step_count += 1
+                event_name = event.get("name", "")
+                event_type = event.get("event", "")
                 
-                # Send progress events
-                if event.get("event") == "on_chain_start":
-                    yield f"data: {json.dumps({'type': 'progress', 'step': step_count, 'message': 'Processing...'})}\n\n"
+                # Send progress events with proper node information
+                if event_type == "on_chain_start":
+                    # Extract node name from event
+                    node_name = event_name
+                    # Map internal names to user-friendly names
+                    node_labels = {
+                        "manager": "Manager",
+                        "search": "Searcher", 
+                        "collection": "Collector",
+                        "advisor": "Advisor",
+                        "reviewer": "Reviewer",
+                        "tools": "Tools",
+                        "parallel": "Parallel Intelligence",
+                    }
+                    # Find matching label
+                    display_name = "System"
+                    for key, label in node_labels.items():
+                        if key in node_name.lower():
+                            display_name = label
+                            break
+                    
+                    message = f"Processing in {display_name}..."
+                    yield f"data: {json.dumps({'type': 'progress', 'step': step_count, 'node': display_name, 'message': message})}\n\n"
                 
                 # Send chunk events for LLM streaming
-                if event.get("event") == "on_chat_model_stream":
+                if event_type == "on_chat_model_stream":
                     chunk = event.get("data", {}).get("chunk", {})
                     if chunk:
                         yield f"data: {json.dumps({'type': 'chunk', 'content': str(chunk)})}\n\n"
+                
+                # Send node_output when a chain ends with output
+                if event_type == "on_chain_end":
+                    output_data = event.get("data", {}).get("output")
+                    if output_data and event_name != "LangGraph":
+                        # Map to display names
+                        node_labels = {
+                            "manager": "Manager",
+                            "search": "Searcher", 
+                            "advisor": "Advisor",
+                            "reviewer": "Reviewer",
+                        }
+                        display_name = "System"
+                        for key, label in node_labels.items():
+                            if key in event_name.lower():
+                                display_name = label
+                                break
+                        
+                        # Extract summary if available
+                        output_summary = None
+                        if isinstance(output_data, dict):
+                            # Try to get candidates count or other summary
+                            if "candidates" in output_data:
+                                output_summary = f"Found {len(output_data['candidates'])} candidates"
+                            elif "artifacts" in output_data:
+                                output_summary = "Generated final report"
+                        
+                        if output_summary and display_name != "System":
+                            yield f"data: {json.dumps({'type': 'node_output', 'node': display_name, 'output': output_summary})}\n\n"
+                    
+                    # Capture final state
+                    if event_name == "LangGraph":
+                        final_state = event.get("data", {}).get("output")
+
+            # If final_state not captured via event, try invoke (fallback)
+            if not final_state:
+                 logger.warning(f"Final state not captured in stream, invoking graph for session {session_id}")
+                 final_state = await asyncio.to_thread(graph.invoke, initial_state)
             
-            # Get final result
-            result = await asyncio.to_thread(graph.invoke, initial_state)
+            # Format final response as ShoppingResponse
+            # Reuse logic from search_products (refactor ideally, but duplicating for safety now)
+            candidates = final_state.get("candidates", [])
+            artifacts = final_state.get("artifacts", {})
+            final_report = artifacts.get("final_report", {})
             
-            # Send completion event with result
-            yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+            matched_products = []
+            for c in candidates:
+                c_data = c.dict() if hasattr(c, "dict") else c
+                source_data = c_data.get("source_data", {})
+                matched_products.append({
+                    "title": c_data.get("title"),
+                    "link": source_data.get("link", ""),
+                    "price": str(c_data.get("price", "")),
+                    "rating": source_data.get("rating"),
+                    "reviews": source_data.get("reviews"),
+                    "image": source_data.get("image"),
+                    "position": source_data.get("position"),
+                    "source": source_data.get("source"),
+                    "delivery": source_data.get("delivery"),
+                    "thumbnail": source_data.get("thumbnail"),
+                })
+
+            products = [ProductInfo(**p) for p in matched_products[:10]]
+            
+            report_type = final_report.get("type")
+            if report_type == "informational_response":
+                rec_info = RecommendationInfo(
+                    recommended_product=ProductInfo(
+                        title="Information Found",
+                        link="",
+                        price="",
+                        image="https://cdn-icons-png.flaticon.com/512/471/471664.png"
+                    ),
+                    value_score=1.0,
+                    reasoning=final_report.get("summary", "No information found."),
+                    explanation="Information Request",
+                    tradeoff_analysis=None
+                )
+                products = []
+            elif report_type == "recommendation_report" and products:
+                top_pick = products[0]
+                rec_info = RecommendationInfo(
+                    recommended_product=top_pick,
+                    value_score=0.95,
+                    reasoning=final_report.get("summary", "Best option based on your criteria."),
+                    explanation=f"We recommend {top_pick.title} because it best matches your needs.",
+                    tradeoff_analysis=None
+                )
+            else:
+                rec_info = RecommendationInfo(
+                    recommended_product=products[0] if products else ProductInfo(title="No products found", link="", price="$0.00"),
+                    value_score=0.5,
+                    reasoning="No specific recommendation available",
+                    explanation="Please try a different search query",
+                )
+
+            response_obj = ShoppingResponse(
+                session_id=session_id,
+                user_query=request.query,
+                matched_products=products,
+                recommendation=rec_info,
+                alternatives=products[1:4] if len(products) > 1 else None,
+                total_results=len(matched_products),
+                search_metadata=final_state.get("metadata", {}),
+                final_answer=final_report.get("content"),  # Pass markdown content
+                follow_up_suggestions=final_report.get("follow_up_suggestions", [])
+            )
+            
+            # Save to conversation memory
+            try:
+                top_recommendation = rec_info.recommended_product.title if rec_info else None
+                ConversationMemory.add_turn_to_session(
+                    session,
+                    user_query=request.query,
+                    search_plan=final_state.get("metadata", {}), # Use metadata as approximation for plan
+                    products_found=len(matched_products),
+                    top_recommendation=top_recommendation,
+                    matched_products=[p.dict() for p in products],
+                )
+                
+                # Persist SessionMemory back to session
+                updated_memory = final_state.get("memory")
+                if updated_memory:
+                    session.session_memory_data = updated_memory.model_dump(mode="json")
+                    logger.info(f"Persisted SessionMemory with {updated_memory.turn_count} turns, intent active: {updated_memory.current_intent.is_active if updated_memory.current_intent else False}")
+                
+                session_manager.update_session(session)
+            except Exception as e:
+                logger.error(f"Failed to save session history in stream: {e}")
+            
+            # Send completion event with formatted result
+            yield f"data: {json.dumps({'type': 'complete', 'result': response_obj.dict()})}\n\n"
             yield "data: {\"type\": \"end\"}\n\n"
             
             logger.info(
@@ -516,9 +758,17 @@ async def get_sessions(limit: int = 100, offset: int = 0, user_id: Optional[str]
             # Extract learned preferences
             learned_prefs = []
             if session.user_preferences.liked_brands:
-                learned_prefs.extend(session.user_preferences.liked_brands[:3])
+                brands = session.user_preferences.liked_brands
+                if isinstance(brands, dict):
+                    learned_prefs.extend(list(brands.keys())[:3])
+                elif isinstance(brands, list):
+                    learned_prefs.extend(brands[:3])
             if session.user_preferences.must_have_features:
-                learned_prefs.extend(session.user_preferences.must_have_features[:3])
+                features = session.user_preferences.must_have_features
+                if isinstance(features, dict):
+                    learned_prefs.extend(list(features.keys())[:3])
+                elif isinstance(features, list):
+                    learned_prefs.extend(features[:3])
             if session.user_preferences.max_budget:
                 learned_prefs.append(f"Budget: ${session.user_preferences.max_budget}")
             
@@ -670,4 +920,8 @@ async def get_graph_traces(session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    import os
+    
+    port = int(os.getenv("PORT", 8000))
+    # log_config=None prevents uvicorn from overwriting our logging configuration
+    uvicorn.run(app, host="0.0.0.0", port=port, log_config=None)
