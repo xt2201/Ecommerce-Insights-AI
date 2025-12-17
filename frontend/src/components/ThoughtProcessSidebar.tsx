@@ -30,22 +30,18 @@ const agentConfig: Record<string, { icon: string; label: string; color: string }
   'greeting': { icon: '👋', label: 'Chào hỏi', color: 'from-pink-500 to-rose-500' },
   'search': { icon: '🔍', label: 'Tìm kiếm', color: 'from-blue-500 to-cyan-500' },
   'analyze': { icon: '📊', label: 'Phân tích', color: 'from-indigo-500 to-blue-500' },
-  'analyze_and_report': { icon: '📈', label: 'Phân tích & Báo cáo', color: 'from-purple-500 to-indigo-500' },
   'consultation': { icon: '💬', label: 'Tư vấn', color: 'from-green-500 to-emerald-500' },
   'clarification': { icon: '❓', label: 'Làm rõ', color: 'from-yellow-500 to-amber-500' },
-  'synthesize': { icon: '✨', label: 'Tổng hợp', color: 'from-purple-500 to-pink-500' },
+  'pre_search_consultation': { icon: '🎯', label: 'Tư vấn trước tìm kiếm', color: 'from-sky-500 to-blue-500' },
   'faq': { icon: '📚', label: 'Câu hỏi thường gặp', color: 'from-teal-500 to-cyan-500' },
-  'pre_search': { icon: '🎯', label: 'Chuẩn bị', color: 'from-sky-500 to-blue-500' },
-  'collection': { icon: '📦', label: 'Thu thập', color: 'from-amber-500 to-orange-500' },
-  'advisor': { icon: '💡', label: 'Cố vấn', color: 'from-emerald-500 to-green-500' },
-  'reviewer': { icon: '✅', label: 'Xem xét', color: 'from-teal-500 to-green-500' },
-  'tools': { icon: '🛠️', label: 'Công cụ', color: 'from-gray-500 to-slate-500' },
+  'synthesize': { icon: '✨', label: 'Tổng hợp', color: 'from-purple-500 to-pink-500' },
   'system': { icon: '⚙️', label: 'Hệ thống', color: 'from-gray-400 to-gray-500' },
 };
 
 function getAgentInfo(nodeName?: string, event?: any) {
   // If event has icon, label, and color from backend, use them
-  if (event && 'icon' in event && 'label' in event && 'color' in event) {
+  if (event && event.type === 'progress' && event.icon && event.label && event.color) {
+    console.log('[ThoughtProcess] Using backend metadata:', { node: nodeName, icon: event.icon, label: event.label });
     return {
       icon: event.icon,
       label: event.label,
@@ -54,8 +50,13 @@ function getAgentInfo(nodeName?: string, event?: any) {
   }
   
   // Fallback to frontend agentConfig
-  if (!nodeName) return agentConfig['system'];
+  if (!nodeName) {
+    console.log('[ThoughtProcess] No nodeName, using system');
+    return agentConfig['system'];
+  }
+  
   const key = Object.keys(agentConfig).find(k => nodeName.toLowerCase().includes(k));
+  console.log('[ThoughtProcess] Using frontend config:', { nodeName, key, config: agentConfig[key || 'system'] });
   return agentConfig[key || 'system'];
 }
 
