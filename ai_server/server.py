@@ -58,6 +58,27 @@ async def lifespan(app: FastAPI):
     session_manager = SessionManager()
     logger.info(f"📦 SessionManager initialized with SQLite: {db_path}")
     
+    # Initialize KnowledgeBase (RAG for Policies/FAQs)
+    if get_config_value("knowledge_base.enabled", True):
+        try:
+            from ai_server.rag.knowledge_base import get_knowledge_base
+            kb = get_knowledge_base()
+            force_reload = get_config_value("knowledge_base.force_reload", False)
+            kb.initialize(force_reload=force_reload)
+            logger.info(f"📚 KnowledgeBase initialized: {kb.count} documents")
+        except Exception as e:
+            logger.warning(f"⚠️ KnowledgeBase initialization failed: {e}")
+    
+    # Initialize KnowledgeGraph (optional - can be lazy loaded)
+    if get_config_value("knowledge_graph.enabled", True):
+        try:
+            from ai_server.rag.knowledge_graph import get_knowledge_graph
+            kg = get_knowledge_graph()
+            stats = kg.get_stats()
+            logger.info(f"🔗 KnowledgeGraph initialized: {stats['total_entities']} entities, {stats['total_relationships']} relationships")
+        except Exception as e:
+            logger.warning(f"⚠️ KnowledgeGraph initialization failed: {e}")
+    
     logger.info("✅ AI Server ready!")
     logger.info("=" * 80)
     
@@ -88,12 +109,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "http://localhost:3003",
-        "http://localhost:3004",
-        "http://localhost:3005",
+        "http://localhost:3001",  # Frontend local dev (primary)
+        "http://127.0.0.1:3001",
+        "http://localhost:3000",  # Docker frontend
+        "http://frontend:3000",
+        "*",  # Allow all for development
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -506,34 +526,48 @@ async def search_products_stream(request: ShoppingRequest):
             step_count = 0
             final_state = None
             
+            # Node labels mapping actual LangGraph node names to display info
+            # Format: node_name_fragment -> (icon, vietnamese_label)
+            # Node labels mapping actual LangGraph node names to display info
+            # Format: node_name_fragment -> (icon, vietnamese_label)
+            node_labels = {
+                "understand": ("🧠", "Hiểu yêu cầu"),
+                "route_decision": ("🔀", "Điều hướng"),
+                "greeting": ("👋", "Chào hỏi"),
+                "search": ("🔍", "Tìm kiếm"),
+                "analyze": ("📊", "Phân tích"),
+                "consultation": ("💬", "Tư vấn"),
+                "clarification": ("❓", "Hỏi thêm"),
+                "pre_search": ("💡", "Tư vấn trước"),
+                "faq": ("📚", "Tra cứu"),
+                "synthesize": ("✨", "Tổng hợp"),
+            }
+            
             async for event in graph.astream_events(initial_state, version="v2"):
                 step_count += 1
                 event_name = event.get("name", "")
                 event_type = event.get("event", "")
                 
+                # DEBUG: Log event names to see what we're actually getting
+                if event_type in ["on_chain_start", "on_chain_end"] and event_name != "LangGraph":
+                    logger.info(f"STREAM EVENT: type={event_type}, name={event_name}")
+                
                 # Send progress events with proper node information
                 if event_type == "on_chain_start":
-                    # Extract node name from event
-                    node_name = event_name
-                    # Map internal names to user-friendly names
-                    node_labels = {
-                        "manager": "Manager",
-                        "search": "Searcher", 
-                        "collection": "Collector",
-                        "advisor": "Advisor",
-                        "reviewer": "Reviewer",
-                        "tools": "Tools",
-                        "parallel": "Parallel Intelligence",
-                    }
-                    # Find matching label
-                    display_name = "System"
-                    for key, label in node_labels.items():
-                        if key in node_name.lower():
+                    # Find matching label by checking if node name contains the key
+                    icon = "⚙️"
+                    display_name = "Hệ thống"
+                    for key, (node_icon, label) in node_labels.items():
+                        if key in event_name.lower():
+                            icon = node_icon
                             display_name = label
+                            logger.info(f"MATCHED: key={key}, event_name={event_name}, display_name={display_name}")
                             break
                     
-                    message = f"Processing in {display_name}..."
-                    yield f"data: {json.dumps({'type': 'progress', 'step': step_count, 'node': display_name, 'message': message})}\n\n"
+                    message = f"Đang xử lý..."
+                    sse_data = {'type': 'progress', 'step': step_count, 'node': display_name, 'icon': icon, 'message': message}
+                    logger.info(f"SSE PROGRESS: {json.dumps(sse_data, ensure_ascii=False)}")
+                    yield f"data: {json.dumps(sse_data, ensure_ascii=False)}\n\n"
                 
                 # Send chunk events for LLM streaming
                 if event_type == "on_chat_model_stream":
@@ -545,30 +579,60 @@ async def search_products_stream(request: ShoppingRequest):
                 if event_type == "on_chain_end":
                     output_data = event.get("data", {}).get("output")
                     if output_data and event_name != "LangGraph":
-                        # Map to display names
-                        node_labels = {
-                            "manager": "Manager",
-                            "search": "Searcher", 
-                            "advisor": "Advisor",
-                            "reviewer": "Reviewer",
-                        }
-                        display_name = "System"
-                        for key, label in node_labels.items():
+                        # Find matching label
+                        icon = "⚙️"
+                        display_name = "Hệ thống"
+                        for key, (node_icon, label) in node_labels.items():
                             if key in event_name.lower():
+                                icon = node_icon
                                 display_name = label
                                 break
                         
-                        # Extract summary if available
+                        # Extract node-specific summaries
                         output_summary = None
                         if isinstance(output_data, dict):
-                            # Try to get candidates count or other summary
-                            if "candidates" in output_data:
-                                output_summary = f"Found {len(output_data['candidates'])} candidates"
+                            # Understanding node - show intent type and query
+                            if "understanding" in output_data:
+                                u = output_data["understanding"]
+                                
+                                # Handle both Pydantic model and dict
+                                if hasattr(u, "model_dump"):
+                                    u_dict = u.model_dump()
+                                elif hasattr(u, "dict"):
+                                    u_dict = u.dict()
+                                else:
+                                    u_dict = u if isinstance(u, dict) else {}
+                                    
+                                msg_type = u_dict.get('message_type', 'unknown')
+                                query = u_dict.get('merged_search_query_en', '')
+                                
+                                output_summary = f"Loại: {msg_type}"
+                                if query:
+                                    output_summary += f" | Query: {query[:30]}..."
+                            
+                            # Route decision
+                            elif "route" in output_data and display_name != "Hệ thống":
+                                route = output_data["route"]
+                                output_summary = f"→ {route}"
+                            
+                            # Search results
+                            elif "candidates" in output_data:
+                                count = len(output_data["candidates"])
+                                output_summary = f"Tìm thấy {count} sản phẩm"
+                            
+                            # Final response
+                            elif "final_response" in output_data:
+                                resp = output_data["final_response"]
+                                if resp:
+                                    output_summary = f"✓ Hoàn thành"
+                            
+                            # Artifacts generated
                             elif "artifacts" in output_data:
-                                output_summary = "Generated final report"
+                                output_summary = "Đã tạo báo cáo"
                         
-                        if output_summary and display_name != "System":
-                            yield f"data: {json.dumps({'type': 'node_output', 'node': display_name, 'output': output_summary})}\n\n"
+                        # Only emit if we have useful info and it's not a generic system node
+                        if output_summary and display_name != "Hệ thống":
+                            yield f"data: {json.dumps({'type': 'node_output', 'node': display_name, 'icon': icon, 'output': output_summary})}\n\n"
                     
                     # Capture final state
                     if event_name == "LangGraph":
@@ -671,7 +735,7 @@ async def search_products_stream(request: ShoppingRequest):
                 logger.error(f"Failed to save session history in stream: {e}")
             
             # Send completion event with formatted result
-            yield f"data: {json.dumps({'type': 'complete', 'result': response_obj.dict()})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete', 'result': response_obj.model_dump()})}\n\n"
             yield "data: {\"type\": \"end\"}\n\n"
             
             logger.info(
@@ -922,6 +986,6 @@ if __name__ == "__main__":
     import uvicorn
     import os
     
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8001))
     # log_config=None prevents uvicorn from overwriting our logging configuration
     uvicorn.run(app, host="0.0.0.0", port=port, log_config=None)

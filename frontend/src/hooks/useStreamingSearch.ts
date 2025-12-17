@@ -11,7 +11,7 @@ import type { ShoppingResponse } from '@/lib/api';
 
 export type StreamEvent =
   | { type: 'start'; session_id: string }
-  | { type: 'progress'; step: number; node: string; message: string }
+  | { type: 'progress'; step: number; node: string; message: string; icon?: string; label?: string; color?: string }
   | { type: 'node_output'; node: string; output: any }
   | { type: 'chunk'; content: string }
   | { type: 'interrupt'; node: string; message: string; thread_id: string }

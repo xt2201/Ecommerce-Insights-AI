@@ -113,6 +113,7 @@ export interface StreamEvent {
   session_id?: string;
   step?: number;
   node?: string;
+  icon?: string;
   message?: string;
   content?: string;
   thread_id?: string;

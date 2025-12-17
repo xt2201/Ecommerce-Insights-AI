@@ -195,8 +195,9 @@ def greeting_node(state: GraphState) -> Dict[str, Any]:
     llm = get_llm(agent_name="manager")
     
     try:
-        prompts = load_prompts_as_dict("synthesis_prompts")
-        system_prompt = prompts.get("greeting_response", 
+        prompts = load_prompts_as_dict("graph_node_prompts")
+        greeting_prompts = prompts.get("greeting", {})
+        system_prompt = greeting_prompts.get("system_prompt", 
             "Generate a friendly greeting as a shopping assistant. Ask what they're looking for.")
     except Exception:
         system_prompt = "Generate a friendly greeting as a shopping assistant."
@@ -204,7 +205,7 @@ def greeting_node(state: GraphState) -> Dict[str, Any]:
     try:
         messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Customer said: '{user_message}'. Generate a welcoming response.")
+            HumanMessage(content=greeting_prompts.get("user_prompt_template", "User: {user_message}").format(user_message=user_message))
         ]
         response = llm.invoke(messages)
         greeting = response.content.strip()
@@ -545,6 +546,194 @@ def pre_search_consultation_node(state: GraphState) -> Dict[str, Any]:
 
 
 @safe_node
+def faq_node(state: GraphState) -> Dict[str, Any]:
+    """
+    Handle FAQ/Policy questions using RAG from KnowledgeBase + KnowledgeGraph.
+    
+    Uses:
+    - KnowledgeBase for semantic search on policies/FAQs
+    - KnowledgeGraph for entity relationships and enhanced context
+    - LLM for generating natural language answers
+    
+    Supports bilingual (EN/VI) with automatic language detection.
+    """
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from ai_server.llm.llm_factory import get_llm
+    from ai_server.utils.prompt_loader import load_prompts_as_dict
+    from ai_server.rag.knowledge_base import get_knowledge_base
+    from ai_server.rag.knowledge_graph import get_knowledge_graph
+    
+    memory: SessionMemory = state.get("memory")
+    understanding: QueryUnderstanding = state.get("understanding")
+    user_message = state.get("user_message", "")
+    
+    logger.info(f"FAQNode: Processing FAQ query '{user_message[:50]}...'")
+    
+    # Initialize RAG components
+    kb = get_knowledge_base()
+    kg = get_knowledge_graph()
+    
+    # Detect language
+    detected_language = kb.detect_language(user_message)
+    language_instruction = "Vietnamese" if detected_language == "vi" else "English"
+    
+    # Retrieve context from KnowledgeBase (policies/FAQs)
+    kb_context = kb.query(
+        query_text=user_message,
+        k=5,
+        language=detected_language,
+    )
+    
+    # Retrieve context from KnowledgeGraph (entity relationships)
+    kg_context = kg.get_entity_context(
+        query=user_message,
+        language=detected_language,
+        max_entities=5,
+    )
+    
+    # Load FAQ prompts
+    try:
+        prompts = load_prompts_as_dict("faq_prompts")
+    except Exception as e:
+        logger.warning(f"Failed to load FAQ prompts: {e}")
+        prompts = {}
+    
+    # Select system prompt based on language
+    if detected_language == "vi":
+        system_prompt = prompts.get("system_prompt_vi", prompts.get("system_prompt", ""))
+    else:
+        system_prompt = prompts.get("system_prompt", "")
+    
+    # Check if we have context
+    if not kb_context and not kg_context:
+        # No relevant context found
+        if detected_language == "vi":
+            response = prompts.get("no_context_response_vi", 
+                "Xin lỗi, tôi không có thông tin về vấn đề đó. Bạn có thể hỏi về chính sách đổi trả, vận chuyển, thanh toán, bảo hành hoặc tài khoản.")
+        else:
+            response = prompts.get("no_context_response",
+                "I apologize, but I don't have specific information about that. You can ask about return policies, shipping, payments, warranty, or account management.")
+        
+        if memory:
+            memory.add_assistant_message(response)
+        
+        artifacts = {
+            "final_report": {
+                "type": "faq_response",
+                "content": response,
+                "summary": "No relevant policy information found",
+                "language": detected_language,
+                "kb_context": "",
+                "kg_context": "",
+                "follow_up_suggestions": []
+            }
+        }
+        
+        return {
+            "final_response": response,
+            "memory": memory,
+            "artifacts": artifacts,
+            "detected_language": detected_language,
+            "kb_context": "",
+            "kg_context": "",
+            "route": "end"
+        }
+    
+    # Build user prompt
+    if detected_language == "vi":
+         user_prompt_template = prompts.get("user_prompt_template_vi") or prompts.get("user_prompt_template")
+    else:
+         user_prompt_template = prompts.get("user_prompt_template")
+         
+    user_prompt_template = user_prompt_template or """## Relevant Policy & FAQ Context
+{context}
+
+## Knowledge Graph Context (Related Policies)
+{kg_context}
+
+## Customer Question
+{question}
+
+## Customer Language
+{language}
+
+Provide a helpful, accurate answer based on the context above.
+Respond in {language_instruction}."""
+    
+    user_prompt = user_prompt_template.format(
+        context=kb_context or "No specific policy context available.",
+        kg_context=kg_context or "No additional relationships found.",
+        question=user_message,
+        language=detected_language,
+        language_instruction=language_instruction,
+    )
+    
+    # Generate response using LLM
+    try:
+        llm = get_llm(agent_name="manager")
+        messages = [
+            SystemMessage(content=system_prompt or "You are a helpful customer service assistant."),
+            HumanMessage(content=user_prompt),
+        ]
+        
+        llm_response = llm.invoke(messages)
+        response = llm_response.content
+        
+        # Clean response if needed
+        if "<think>" in response:
+            response = response.split("</think>")[-1].strip()
+        
+    except Exception as e:
+        logger.error(f"FAQNode: LLM generation failed: {e}")
+        # Fallback to returning context directly
+        response = kb_context if kb_context else "I'm sorry, I couldn't generate a response. Please try again."
+    
+    # Update memory
+    if memory:
+        memory.add_assistant_message(response)
+    
+    # Generate follow-up suggestions based on category
+    follow_up_suggestions = []
+    if detected_language == "vi":
+        follow_up_suggestions = [
+            "Thời gian giao hàng là bao lâu?",
+            "Làm thế nào để đổi trả sản phẩm?",
+            "Các phương thức thanh toán được chấp nhận?"
+        ]
+    else:
+        follow_up_suggestions = [
+            "How long does shipping take?",
+            "How do I return an item?",
+            "What payment methods do you accept?"
+        ]
+    
+    logger.info(f"FAQNode: Generated response ({len(response)} chars) in {detected_language}")
+    
+    # Build artifacts
+    artifacts = {
+        "final_report": {
+            "type": "faq_response",
+            "content": response,
+            "summary": response[:200] if len(response) > 200 else response,
+            "language": detected_language,
+            "kb_context": kb_context[:500] if kb_context else "",
+            "kg_context": kg_context[:500] if kg_context else "",
+            "follow_up_suggestions": follow_up_suggestions
+        }
+    }
+    
+    return {
+        "final_response": response,
+        "memory": memory,
+        "artifacts": artifacts,
+        "detected_language": detected_language,
+        "kb_context": kb_context,
+        "kg_context": kg_context,
+        "route": "end"
+    }
+
+
+@safe_node
 def clarification_node(state: GraphState) -> Dict[str, Any]:
     """Ask for clarification - uses LLM to generate context-aware questions (100% agentic)."""
     memory: SessionMemory = state.get("memory")
@@ -609,13 +798,19 @@ def synthesize_node(state: GraphState) -> Dict[str, Any]:
     
     if not candidates:
         # No results case
+        original_user_message = state.get("user_message", search_query)
+        
         no_results_prompt = prompts.get("no_results_response",
             "No products found. Suggest alternatives or ask what else they're looking for.")
         
+        # Format if placeholders exist
+        formatted_prompt = no_results_prompt.replace("{query}", search_query).replace("{original_query}", original_user_message)
+        
         try:
             messages = [
-                SystemMessage(content=no_results_prompt),
-                HumanMessage(content=f"Search query was: '{search_query}'")
+                SystemMessage(content=formatted_prompt),
+                # HumanMessage is redundant if prompt is comprehensive, but keeping consistent structure
+                HumanMessage(content=f"Generate 'no results' response for: {original_user_message}")
             ]
             resp = llm.invoke(messages)
             response = resp.content.strip()
@@ -624,21 +819,45 @@ def synthesize_node(state: GraphState) -> Dict[str, Any]:
         except Exception:
             response = "Sorry, I couldn't find matching products. Would you like to try a different search?"
     else:
-        # Build products list
+        # Get original user message for language detection
+        original_user_message = state.get("user_message", search_query)
+        
+        # Build products list with more details
         products_list = []
         for i, c in enumerate(candidates[:5], 1):
             price_str = f"${c.price}" if c.price else "N/A"
-            products_list.append(f"{i}. {c.title} - {price_str}")
+            rating_str = f", Rating: {c.source_data.get('rating', 'N/A')}" if c.source_data else ""
+            specs = c.source_data.get("snippet", "")[:100] if c.source_data else ""
+            products_list.append(f"{i}. {c.title} - {price_str}{rating_str}")
+            if specs:
+                products_list.append(f"   Specs: {specs}")
+        
+        # Build advisor analysis text from candidate notes and domain scores
+        advisor_analysis_lines = []
+        for i, c in enumerate(candidates[:5], 1):
+            notes = " | ".join(c.notes) if c.notes else "No specific analysis"
+            domain_score = getattr(c, 'domain_score', 0.5)
+            advisor_analysis_lines.append(
+                f"{i}. {c.title[:50]}...: Fit Score={domain_score:.1f}/1.0, Analysis: {notes}"
+            )
+        advisor_analysis = "\n".join(advisor_analysis_lines) if advisor_analysis_lines else "No expert analysis available"
         
         system_prompt = prompts.get("system_prompt",
             "Present these products to the customer in a helpful, conversational way.")
         user_template = prompts.get("user_prompt_template",
             "Search: {search_query}\n\nProducts:\n{products_list}")
         
-        user_prompt = user_template.format(
-            search_query=search_query,
-            products_list="\n".join(products_list)
-        )
+        # Format with all required fields
+        try:
+            user_prompt = user_template.format(
+                original_user_message=original_user_message,
+                search_query=search_query,
+                products_list="\n".join(products_list),
+                advisor_analysis=advisor_analysis
+            )
+        except KeyError:
+            # Fallback for old template format
+            user_prompt = f"Customer asked: {original_user_message}\n\nProducts:\n" + "\n".join(products_list)
         
         try:
             messages = [
@@ -696,7 +915,8 @@ def build_graph():
     workflow.add_node("analyze", analyze_node)
     workflow.add_node("consultation", consultation_node)
     workflow.add_node("clarification", clarification_node)
-    workflow.add_node("pre_search_consultation", pre_search_consultation_node)  # NEW: Consultative flow
+    workflow.add_node("pre_search_consultation", pre_search_consultation_node)  # Consultative flow
+    workflow.add_node("faq", faq_node)  # FAQ/Policy RAG node
     workflow.add_node("synthesize", synthesize_node)
     
     # Entry point
@@ -711,8 +931,8 @@ def build_graph():
             "search": "search",
             "consultation": "consultation",
             "clarification": "clarification",
-            "pre_search_consultation": "pre_search_consultation",  # NEW: Consultative flow
-            "faq": "clarification",  # TODO: Implement FAQ node
+            "pre_search_consultation": "pre_search_consultation",
+            "faq": "faq",  # FAQ/Policy questions → RAG node
             "order_status": "clarification",  # TODO: Implement order node
             "confirmation": "search",  # User confirmation → proceed to search
             "synthesize": "synthesize"
@@ -727,7 +947,8 @@ def build_graph():
     workflow.add_edge("greeting", END)
     workflow.add_edge("consultation", END)
     workflow.add_edge("clarification", END)
-    workflow.add_edge("pre_search_consultation", END)  # NEW: Returns to user for confirmation
+    workflow.add_edge("pre_search_consultation", END)
+    workflow.add_edge("faq", END)  # FAQ responses are terminal
     workflow.add_edge("synthesize", END)
     
     return workflow.compile()

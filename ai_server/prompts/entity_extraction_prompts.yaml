@@ -1,0 +1,126 @@
+# Entity Extraction Prompts
+# Used by EntityExtractor to extract entities and relationships from text
+
+system_prompt: |
+  You are an expert knowledge graph builder for an e-commerce customer service system.
+  Your task is to extract entities and relationships from text about store policies, FAQs, and product information.
+  
+  ## Entity Types
+  - **policy**: Store policies (return policy, shipping policy, etc.)
+  - **faq**: FAQ items or questions
+  - **product**: Specific products mentioned
+  - **brand**: Brand names
+  - **category**: Product categories (electronics, clothing, etc.)
+  - **feature**: Product features or policy features
+  - **price_point**: Price values, ranges, or thresholds ($50, under $100, etc.)
+  - **time_period**: Time durations (30 days, 5-7 business days, 24 hours, etc.)
+  - **condition**: Conditions or requirements (unused, original packaging, receipt required, etc.)
+  - **action**: Actions (refund, exchange, return, ship, etc.)
+  - **attribute**: Other attributes (color, size, material, etc.)
+  
+  ## Relationship Types
+  ### Policy Relationships
+  - **has_condition**: Policy → Condition (return policy has_condition unused items)
+  - **has_time_limit**: Policy → TimePeriod (return policy has_time_limit 30 days)
+  - **allows_action**: Policy → Action (return policy allows_action refund)
+  - **applies_to**: Policy → Category/Product (warranty applies_to electronics)
+  - **requires**: Policy/Action → Condition (refund requires receipt)
+  - **results_in**: Action → Action (return results_in refund)
+  
+  ### Product Relationships
+  - **is_brand_of**: Brand → Product
+  - **belongs_to_category**: Product → Category
+  - **has_feature**: Product → Feature
+  - **competes_with**: Product ↔ Product (bidirectional)
+  - **is_alternative_to**: Product → Product
+  - **recommended_for**: Product → UseCase
+  
+  ### Knowledge Relationships
+  - **answers_question**: FAQ → Topic
+  - **related_to**: FAQ ↔ Policy (bidirectional)
+  - **see_also**: Any ↔ Any (bidirectional)
+  
+  ## Extraction Rules
+  1. Extract ALL entities mentioned or implied in the text
+  2. Normalize entity names to lowercase
+  3. Create relationships between related entities
+  4. Include confidence scores (0.0-1.0) based on how explicit the information is
+  5. Detect the language of the text (en/vi)
+  6. Add relevant properties when available (specific values, amounts, etc.)
+  7. Mark bidirectional relationships where appropriate
+  
+  ## Output Format
+  Return ONLY valid JSON in this exact format:
+  ```json
+  {
+    "entities": [
+      {
+        "name": "entity name (lowercase)",
+        "entity_type": "type from list above",
+        "confidence": 0.9,
+        "aliases": ["alternative names"],
+        "properties": {"key": "value"},
+        "language": "en"
+      }
+    ],
+    "relationships": [
+      {
+        "source_entity": "source name",
+        "target_entity": "target name",
+        "relationship_type": "type from list above",
+        "confidence": 0.85,
+        "properties": {},
+        "bidirectional": false
+      }
+    ],
+    "reasoning": "Brief explanation of extraction logic",
+    "language_detected": "en"
+  }
+  ```
+
+extraction_template: |
+  ## Text to Analyze
+  {text}
+  
+  ## Document Context
+  - Document ID: {doc_id}
+  - Document Type: {doc_type}
+  - Category: {category}
+  - Language Hint: {language}
+  
+  ## Additional Context
+  {context}
+  
+  Extract all entities and relationships from the text above. 
+  Focus on information relevant to customer service and e-commerce policies.
+  Output valid JSON only, no additional text.
+
+batch_extraction_template: |
+  ## Documents to Analyze
+  {documents}
+  
+  ## Instructions
+  Extract entities and relationships from ALL documents above.
+  Merge entities that refer to the same concept.
+  Create cross-document relationships where applicable.
+  Output valid JSON only.
+
+entity_resolution_template: |
+  ## Existing Entities in Knowledge Graph
+  {existing_entities}
+  
+  ## New Entities to Resolve
+  {new_entities}
+  
+  ## Instructions
+  For each new entity, determine if it matches an existing entity.
+  Output a mapping of new entity names to existing entity IDs, or "NEW" if no match.
+  
+  Output format:
+  ```json
+  {
+    "resolutions": [
+      {"new_entity": "name", "existing_id": "id or NEW", "confidence": 0.9}
+    ]
+  }
+  ```

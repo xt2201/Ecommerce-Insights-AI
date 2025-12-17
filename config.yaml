@@ -133,6 +133,56 @@ vector_store:
     nprobe: 10
 
 # ============================================================================
+# Knowledge Graph Configuration
+# ============================================================================
+knowledge_graph:
+  enabled: true
+  
+  # Storage backend
+  storage:
+    backend: "sqlite"  # sqlite (default), neo4j (future)
+    sqlite:
+      db_path: "data/knowledge_graph.db"
+    # neo4j:
+    #   uri: "bolt://localhost:7687"
+    #   user: "neo4j"
+    #   password: ""
+  
+  # Entity extraction settings
+  extraction:
+    provider: "cerebras"
+    model_name: "qwen-3-32b"
+    temperature: 0.1
+    min_confidence: 0.7
+    max_entities_per_query: 15
+    batch_size: 5
+  
+  # Retrieval settings
+  retrieval:
+    max_hops: 2  # Graph traversal depth
+    top_k_entities: 10
+    include_relationships: true
+    use_embeddings: true  # Hybrid: embedding + graph
+
+# ============================================================================
+# Knowledge Base Configuration (Policies/FAQs)
+# ============================================================================
+knowledge_base:
+  enabled: true
+  collection_name: "knowledge_base"
+  data_path: "data/policy_faq.json"
+  
+  # Search settings
+  search:
+    default_k: 5
+    use_language_filter: true
+    fallback_without_language: true
+  
+  # Auto-initialization
+  auto_load_on_startup: true
+  force_reload: false  # Set to true to reload data on every startup
+
+# ============================================================================
 # Embedding Model Configuration
 # ============================================================================
 embeddings:

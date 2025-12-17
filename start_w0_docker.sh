@@ -46,61 +46,16 @@ if [ -f "requirements.txt" ]; then
     fi
 fi
 
-# 3. Port Management
-DEFAULT_PORT=8000
-BACKEND_PORT=$DEFAULT_PORT
+# 3. Port Configuration
+BACKEND_PORT=8001
+FRONTEND_PORT=3001
 
-check_port() {
-    # Check if port is bindable using Python
-    if python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.bind(('', $1)); s.close()" > /dev/null 2>&1; then
-        return 0 # Port is free (bindable)
-    else
-        # Port is busy, try to identify who
-        PID=$(lsof -ti :$1)
-        if [ ! -z "$PID" ]; then
-            CMD=$(ps -p $PID -o args=)
-            if [[ "$CMD" == *"ai_server/server.py"* ]]; then
-                echo -e "${YELLOW}⚠️  Port $1 is occupied by a stale server instance (PID $PID). Killing it...${NC}"
-                kill -9 $PID
-                sleep 1
-                return 0 # Port cleared
-            else
-                echo -e "${YELLOW}⚠️  Port $1 is occupied by another process (PID $PID).${NC}"
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Port $1 is occupied (process hidden/privileged).${NC}"
-        fi
-        return 1 # Port busy
-    fi
-}
+echo -e "${BLUE}📋 Port Configuration:${NC}"
+echo -e "   Backend:  $BACKEND_PORT"
+echo -e "   Frontend: $FRONTEND_PORT"
+echo ""
 
-# Check default port
-if ! check_port $DEFAULT_PORT; then
-    # Find a free port
-    echo -e "${YELLOW}Searching for a free port...${NC}"
-    for port in {8001..8010}; do
-        if [ -z "$(lsof -ti :$port)" ]; then
-            BACKEND_PORT=$port
-            echo -e "${GREEN}Found free port: $BACKEND_PORT${NC}"
-            break
-        fi
-    done
-fi
-
-# 4. Start Backend
-echo -e "${BLUE}🐍 Starting Backend (Port $BACKEND_PORT)...${NC}"
-export PYTHONPATH=$PYTHONPATH:$(pwd)
-export PORT=$BACKEND_PORT
-python3 ai_server/server.py &
-BACKEND_PID=$!
-
-# Wait for Backend to be ready
-echo "Waiting for Backend to initialize..."
-sleep 5
-
-# 5. Start Frontend
-echo -e "${BLUE}⚛️  Starting Frontend (Port 3000)...${NC}"
-
+# 4. Check for npm
 # Check for npm
 if ! command -v npm &> /dev/null; then
     echo -e "${RED}❌ npm is not installed.${NC}"
@@ -144,10 +99,6 @@ if [ -z "$NODE_VERSION" ] || [ "$NODE_VERSION" -lt 18 ]; then
         exit 0
     fi
 fi
-
-# Configuration
-BACKEND_PORT=8001
-FRONTEND_PORT=3001
 
 # Function to kill process on a port
 kill_port() {
@@ -208,16 +159,27 @@ if [ ! -d "node_modules" ]; then
 fi
 
 export BACKEND_URL="http://localhost:$BACKEND_PORT"
+export NEXT_PUBLIC_API_URL="http://localhost:$BACKEND_PORT"
 # Ensure Next.js picks up the env var
-npm run dev -- -p $FRONTEND_PORT &
+npm run dev -- -p $FRONTEND_PORT > ../frontend.log 2>&1 &
 FRONTEND_PID=$!
 cd ..
 
-echo -e "${GREEN}✅ Services started!${NC}"
-echo -e "   Frontend: http://localhost:$FRONTEND_PORT"
-echo -e "   Backend:  http://localhost:$BACKEND_PORT"
-echo -e "   API Docs: http://localhost:$BACKEND_PORT/docs"
-echo -e "${BLUE}Press Ctrl+C to stop.${NC}"
+echo ""
+echo -e "${GREEN}✅ Services started successfully!${NC}"
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}   🌐 Frontend:${NC} http://localhost:$FRONTEND_PORT"
+echo -e "${GREEN}   🔧 Backend:${NC}  http://localhost:$BACKEND_PORT"
+echo -e "${GREEN}   📚 API Docs:${NC} http://localhost:$BACKEND_PORT/docs"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo -e "${BLUE}📝 Logs:${NC}"
+echo -e "   Backend:  server_debug.txt"
+echo -e "   Frontend: frontend.log"
+echo ""
+echo -e "${YELLOW}Press Ctrl+C to stop all services.${NC}"
+echo ""
 
 # Wait for both processes
 wait $BACKEND_PID $FRONTEND_PID

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { 
   MessageSquare, 
   Plus, 
@@ -21,6 +21,8 @@ import { getSessions, deleteSession, createSession, type SessionInfo } from '@/l
  */
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeSessionId = searchParams.get('session');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -156,7 +158,7 @@ export default function Sidebar() {
               <div className="space-y-1">
                 {dateSessions.map((session) => {
                   const firstQuery = session.queries?.[0] || 'New conversation';
-                  const isActive = pathname.includes(session.session_id);
+                  const isActive = activeSessionId === session.session_id;
                   
                   return (
                     <div

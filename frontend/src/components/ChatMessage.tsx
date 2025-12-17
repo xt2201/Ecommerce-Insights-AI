@@ -250,14 +250,6 @@ function ThinkingAccordion({ events, isComplete }: { events: StreamEvent[], isCo
 
   if (progressEvents.length === 0) return null;
 
-  const agentIcons: Record<string, string> = {
-    'manager': '🧑‍💼',
-    'search': '🔍',
-    'advisor': '💡',
-    'reviewer': '✅',
-    'tools': '🛠️'
-  };
-
   return (
     <div className="mb-4">
       <button 
@@ -273,18 +265,34 @@ function ThinkingAccordion({ events, isComplete }: { events: StreamEvent[], isCo
       </button>
 
       {isOpen && (
-        <div className="mt-3 ml-6 pl-4 border-l-2 border-purple-500/30 space-y-3">
+        <div className="mt-3 ml-6 pl-4 border-l-2 border-purple-500/30 space-y-2">
           {progressEvents.map((e, i) => {
-            const nodeName = e.node?.toLowerCase() || 'system';
-            const icon = Object.entries(agentIcons).find(([k]) => nodeName.includes(k))?.[1] || '⚙️';
+            // Use icon from event, fallback to gear
+            const icon = e.icon || '⚙️';
+            const nodeName = e.node || 'Hệ thống';
+            const output = e.output;
+            const isNodeOutput = e.type === 'node_output';
             
             return (
-              <div key={i} className="text-sm animate-fade-in">
+              <div key={i} className={`text-sm animate-fade-in ${isNodeOutput ? 'bg-muted/30 rounded-lg p-2' : ''}`}>
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <span>{icon}</span>
-                  <span className="capitalize">{e.node || 'System'}</span>
+                  <span>{nodeName}</span>
+                  {isNodeOutput && (
+                    <span className="text-positive ml-auto">
+                      <Check className="w-4 h-4" />
+                    </span>
+                  )}
                 </div>
-                {e.message && <div className="text-muted-foreground ml-6 mt-0.5">{e.message}</div>}
+                {/* Show output for node_output events, message for progress events */}
+                {output && (
+                  <div className="text-xs text-muted-foreground ml-6 mt-1 font-mono bg-muted/50 px-2 py-1 rounded">
+                    {output}
+                  </div>
+                )}
+                {e.message && !isNodeOutput && (
+                  <div className="text-muted-foreground ml-6 mt-0.5">{e.message}</div>
+                )}
               </div>
             );
           })}
@@ -323,7 +331,10 @@ function AssistantResponse({
       )}
 
       {/* Top Recommendation Card */}
-      {recommendation && recommendation.recommended_product.title !== "Information Found" && (
+      {recommendation && 
+       recommendation.recommended_product.title !== "Information Found" && 
+       !recommendation.recommended_product.title.includes("No products found") && 
+       !recommendation.recommended_product.title.includes("No result") && (
         <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card p-5 shadow-lg">
           {/* Badge */}
           <div className="absolute top-0 right-0 bg-gradient-to-l from-primary to-primary/80 text-primary-foreground text-xs font-bold px-4 py-1.5 rounded-bl-xl">

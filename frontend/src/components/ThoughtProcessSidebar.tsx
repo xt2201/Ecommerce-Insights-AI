@@ -24,18 +24,36 @@ interface ThoughtProcessSidebarProps {
   currentStep: number;
 }
 
-// Agent icons and colors mapping
+// Agent icons and colors mapping - matches actual graph nodes
 const agentConfig: Record<string, { icon: string; label: string; color: string }> = {
-  'manager': { icon: '🧑‍💼', label: 'Manager', color: 'from-violet-500 to-purple-500' },
-  'search': { icon: '🔍', label: 'Searcher', color: 'from-blue-500 to-cyan-500' },
-  'collection': { icon: '📦', label: 'Collector', color: 'from-amber-500 to-orange-500' },
-  'advisor': { icon: '💡', label: 'Advisor', color: 'from-green-500 to-emerald-500' },
-  'reviewer': { icon: '✅', label: 'Reviewer', color: 'from-teal-500 to-green-500' },
-  'tools': { icon: '🛠️', label: 'Tools', color: 'from-gray-500 to-slate-500' },
-  'system': { icon: '⚙️', label: 'System', color: 'from-gray-400 to-gray-500' },
+  'understand': { icon: '🧠', label: 'Hiểu yêu cầu', color: 'from-violet-500 to-purple-500' },
+  'greeting': { icon: '👋', label: 'Chào hỏi', color: 'from-pink-500 to-rose-500' },
+  'search': { icon: '🔍', label: 'Tìm kiếm', color: 'from-blue-500 to-cyan-500' },
+  'analyze': { icon: '📊', label: 'Phân tích', color: 'from-indigo-500 to-blue-500' },
+  'analyze_and_report': { icon: '📈', label: 'Phân tích & Báo cáo', color: 'from-purple-500 to-indigo-500' },
+  'consultation': { icon: '💬', label: 'Tư vấn', color: 'from-green-500 to-emerald-500' },
+  'clarification': { icon: '❓', label: 'Làm rõ', color: 'from-yellow-500 to-amber-500' },
+  'synthesize': { icon: '✨', label: 'Tổng hợp', color: 'from-purple-500 to-pink-500' },
+  'faq': { icon: '📚', label: 'Câu hỏi thường gặp', color: 'from-teal-500 to-cyan-500' },
+  'pre_search': { icon: '🎯', label: 'Chuẩn bị', color: 'from-sky-500 to-blue-500' },
+  'collection': { icon: '📦', label: 'Thu thập', color: 'from-amber-500 to-orange-500' },
+  'advisor': { icon: '💡', label: 'Cố vấn', color: 'from-emerald-500 to-green-500' },
+  'reviewer': { icon: '✅', label: 'Xem xét', color: 'from-teal-500 to-green-500' },
+  'tools': { icon: '🛠️', label: 'Công cụ', color: 'from-gray-500 to-slate-500' },
+  'system': { icon: '⚙️', label: 'Hệ thống', color: 'from-gray-400 to-gray-500' },
 };
 
-function getAgentInfo(nodeName?: string) {
+function getAgentInfo(nodeName?: string, event?: any) {
+  // If event has icon, label, and color from backend, use them
+  if (event && 'icon' in event && 'label' in event && 'color' in event) {
+    return {
+      icon: event.icon,
+      label: event.label,
+      color: event.color
+    };
+  }
+  
+  // Fallback to frontend agentConfig
   if (!nodeName) return agentConfig['system'];
   const key = Object.keys(agentConfig).find(k => nodeName.toLowerCase().includes(k));
   return agentConfig[key || 'system'];
@@ -165,7 +183,7 @@ export default function ThoughtProcessSidebar({
               const isActive = isStreaming && isLast;
               const isOutput = event.type === 'node_output';
               const nodeName = 'node' in event ? event.node : undefined;
-              const agent = getAgentInfo(nodeName);
+              const agent = getAgentInfo(nodeName, event);
               
               return (
                 <div 

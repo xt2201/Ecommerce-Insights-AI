@@ -67,3 +67,4 @@ report/
 logs/
 data/
 scripts/
+*.db

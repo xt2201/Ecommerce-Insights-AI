@@ -245,6 +245,31 @@ async def search_products_stream(
                     conversation=session.conversation_context  # Load persistent context
                 )
                 
+                # Internal LangChain components to filter out
+                INTERNAL_CHAIN_NAMES = [
+                    "LangGraph", "RunnableSequence", "RunnableLambda", "RunnableBinding",
+                    "RunnableParallel", "RunnablePassthrough", "PromptTemplate",
+                    "ChatOpenAI", "ChatAnthropic", "ChatGroq", "ChatMistral", "ChatCohere",
+                    "start", "__start__", "__end__", "StrOutputParser", "JsonOutputParser"
+                ]
+                
+                # Node information with icons, labels, and colors
+                NODE_INFO = {
+                    'understand': {'icon': '🧠', 'label': 'Hiểu yêu cầu', 'color': 'from-violet-500 to-purple-500', 'message': 'Đang phân tích yêu cầu của bạn'},
+                    'greeting': {'icon': '👋', 'label': 'Chào hỏi', 'color': 'from-pink-500 to-rose-500', 'message': 'Đang chào hỏi và chuẩn bị'},
+                    'search': {'icon': '🔍', 'label': 'Tìm kiếm', 'color': 'from-blue-500 to-cyan-500', 'message': 'Đang tìm kiếm sản phẩm'},
+                    'analyze': {'icon': '📊', 'label': 'Phân tích', 'color': 'from-indigo-500 to-blue-500', 'message': 'Đang phân tích dữ liệu sản phẩm'},
+                    'analyze_and_report': {'icon': '📈', 'label': 'Phân tích & Báo cáo', 'color': 'from-purple-500 to-indigo-500', 'message': 'Đang phân tích và tạo báo cáo'},
+                    'consultation': {'icon': '💬', 'label': 'Tư vấn', 'color': 'from-green-500 to-emerald-500', 'message': 'Đang tư vấn'},
+                    'clarification': {'icon': '❓', 'label': 'Làm rõ', 'color': 'from-yellow-500 to-amber-500', 'message': 'Đang làm rõ thông tin'},
+                    'synthesize': {'icon': '✨', 'label': 'Tổng hợp', 'color': 'from-purple-500 to-pink-500', 'message': 'Đang tổng hợp kết quả'},
+                    'faq': {'icon': '📚', 'label': 'Câu hỏi thường gặp', 'color': 'from-teal-500 to-cyan-500', 'message': 'Đang tra cứu câu hỏi thường gặp'},
+                    'pre_search': {'icon': '🎯', 'label': 'Chuẩn bị', 'color': 'from-sky-500 to-blue-500', 'message': 'Đang chuẩn bị tìm kiếm'},
+                    'collection': {'icon': '📦', 'label': 'Thu thập', 'color': 'from-amber-500 to-orange-500', 'message': 'Đang thu thập dữ liệu'},
+                    'advisor': {'icon': '💡', 'label': 'Cố vấn', 'color': 'from-emerald-500 to-green-500', 'message': 'Đang đưa ra tư vấn'},
+                    'reviewer': {'icon': '✅', 'label': 'Xem xét', 'color': 'from-teal-500 to-green-500', 'message': 'Đang xem xét kết quả'},
+                }
+                
                 step_count = 0
                 async for event in graph.astream_events(initial_state, config, version="v2"):
                     try:
@@ -253,17 +278,33 @@ async def search_products_stream(
                         # Progress events (Start of node)
                         if event.get("event") == "on_chain_start":
                             metadata = event.get("metadata", {})
-                            node_name = metadata.get("langgraph_node") or event.get("name", "")
+                            # Only emit events with langgraph_node metadata (actual graph nodes)
+                            node_name = metadata.get("langgraph_node")
                             
-                            if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
-                                yield f"data: {json.dumps({'type': 'progress', 'step': step_count, 'node': node_name, 'message': f'Executing {node_name}'})}\n\n"
+                            if node_name and node_name not in INTERNAL_CHAIN_NAMES:
+                                node_info = NODE_INFO.get(node_name, {
+                                    'icon': '⚙️',
+                                    'label': 'Hệ thống',
+                                    'color': 'from-gray-400 to-gray-500',
+                                    'message': f'Đang xử lý {node_name}'
+                                })
+                                yield f"data: {json.dumps({
+                                    'type': 'progress',
+                                    'step': step_count,
+                                    'node': node_name,
+                                    'icon': node_info['icon'],
+                                    'label': node_info['label'],
+                                    'color': node_info['color'],
+                                    'message': node_info['message']
+                                })}\n\n"
                         
                         # Output events (End of node)
                         if event.get("event") == "on_chain_end":
                             metadata = event.get("metadata", {})
-                            node_name = metadata.get("langgraph_node") or event.get("name", "")
+                            # Only emit events with langgraph_node metadata (actual graph nodes)
+                            node_name = metadata.get("langgraph_node")
                             
-                            if node_name and node_name not in ["LangGraph", "RunnableSequence", "start", "__start__", "RunnableLambda"]:
+                            if node_name and node_name not in INTERNAL_CHAIN_NAMES:
                                 output_data = event.get("data", {}).get("output")
                                 safe_output = to_serializable(output_data)
                                 

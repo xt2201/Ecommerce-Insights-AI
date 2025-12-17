@@ -82,5 +82,12 @@ class AgentState(TypedDict, total=False):
     # Phase 4: Context Retrieval (FAISS integration)
     retrieved_context: Dict[str, Any]  # Context from vector similarity search
     
+    # Phase 5: Knowledge Base & Knowledge Graph (RAG for Policies/FAQs)
+    kb_context: str  # Context retrieved from KnowledgeBase (policies/FAQs)
+    kg_context: str  # Context retrieved from KnowledgeGraph (entity relationships)
+    extracted_entities: List[Dict[str, Any]]  # Entities extracted from user query
+    detected_language: str  # Detected language of user query (en/vi)
+    faq_response: Dict[str, Any]  # Response from FAQ node
+    
     # Monitoring & Tracing
     trace_id: str  # Execution trace identifier for monitoring
