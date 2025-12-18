@@ -18,8 +18,8 @@ export default function SettingsPage() {
     try {
       const result = await clearAllSessions();
       setClearMessage(result.message || 'All sessions cleared successfully');
-    } catch (error: any) {
-      setClearMessage(error.message || 'Failed to clear sessions');
+    } catch (error) {
+      setClearMessage(error instanceof Error ? error.message : 'Failed to clear sessions');
     } finally {
       setIsClearing(false);
     }

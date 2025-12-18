@@ -214,6 +214,84 @@ class ShoppingResponse(BaseModel):
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+def generate_session_title_from_content(user_query: str, assistant_response: str) -> str:
+    """
+    Generate a concise, descriptive title using LLM based on user query and assistant response.
+    Returns a 3-6 word title capturing the main topic/product.
+    
+    Args:
+        user_query: User's original query
+        assistant_response: Full assistant response/recommendation
+    
+    Returns:
+        A cleaned, validated title string
+    """
+    try:
+        from ai_server.llm.llm_factory import get_llm
+        import re
+        
+        llm = get_llm(agent_name="manager")
+        
+        # Prepare context for title generation
+        context = assistant_response[:400] if assistant_response else ""
+        
+        prompt = f"""Based on this shopping conversation, generate a concise 3-6 word title.
+
+Rules:
+- The title must be the language of the user query
+- Capture the MAIN product category or specific item being searched
+- Use natural language (e.g., "Wireless Gaming Mouse", "4K Monitor 27 inch", "Running Shoes Men")
+- DO NOT use quotes, thinking tags, backticks, or any extra text
+- DO NOT use "Title:" prefix or any explanations
+- Output ONLY the title, nothing else
+
+User query: {user_query}
+Context: {context}
+
+Title:"""
+        
+        title_response = llm.invoke(prompt)
+        title_text = str(title_response.content).strip()
+        
+        # Clean up LLM response
+        # Remove thinking tags
+        title_text = re.sub(r'<think>.*?</think>', '', title_text, flags=re.DOTALL)
+        title_text = re.sub(r'</?think>', '', title_text)
+        
+        # Remove common unwanted prefixes
+        title_text = re.sub(r'^(Title:|Here\'s the title:|The title is:|Generated title:)\s*', '', title_text, flags=re.IGNORECASE)
+        
+        # Remove quotes and special characters
+        title_text = title_text.strip().replace('"', '').replace("'", "").replace('`', '')
+        
+        # Take first line only
+        title_text = title_text.split('\n')[0].strip()
+        
+        # Limit length
+        if len(title_text) > 100:
+            title_text = title_text[:97] + "..."
+        
+        # Validate and return
+        if title_text and 3 <= len(title_text) <= 100:
+            logger.debug(f"✅ Generated title: '{title_text}'")
+            return title_text
+        else:
+            # Fallback: extract key words from query
+            fallback = ' '.join(user_query.split()[:8])
+            logger.warning(f"⚠️ Generated title invalid, using fallback: '{fallback}'")
+            return fallback
+            
+    except Exception as e:
+        logger.error(f"❌ Title generation error: {e}")
+        # Ultimate fallback: first 8 words of query
+        fallback = ' '.join(user_query.split()[:8])
+        return fallback if fallback else "Shopping Query"
+
+
+# ============================================================================
 # ============================================================================
 # Health Check
 # ============================================================================
@@ -554,9 +632,14 @@ async def search_products_stream(request: ShoppingRequest):
                 
                 # Send progress events with proper node information
                 if event_type == "on_chain_start":
+                    # Skip the root LangGraph event
+                    if event_name == "LangGraph":
+                        continue
+
                     # Find matching label by checking if node name contains the key
-                    icon = "⚙️"
-                    display_name = "Hệ thống"
+                    icon = None
+                    display_name = None
+                    
                     for key, (node_icon, label) in node_labels.items():
                         if key in event_name.lower():
                             icon = node_icon
@@ -564,11 +647,15 @@ async def search_products_stream(request: ShoppingRequest):
                             logger.info(f"MATCHED: key={key}, event_name={event_name}, display_name={display_name}")
                             break
                     
-                    message = f"Đang xử lý..."
-                    sse_data = {'type': 'progress', 'step': step_count, 'node': display_name, 'icon': icon, 'message': message}
-                    logger.info(f"SSE PROGRESS: {json.dumps(sse_data, ensure_ascii=False)}")
-                    yield f"data: {json.dumps(sse_data, ensure_ascii=False)}\n\n"
-                
+                    # Only emit event if we matched a known node label
+                    if display_name:
+                        message = f"Đang xử lý..."
+                        sse_data = {'type': 'progress', 'step': step_count, 'node': display_name, 'icon': icon, 'message': message}
+                        logger.info(f"SSE PROGRESS: {json.dumps(sse_data, ensure_ascii=False)}")
+                        yield f"data: {json.dumps(sse_data, ensure_ascii=False)}\n\n"
+                    else:
+                        logger.debug(f"SKIPPED EVENT: {event_name}")
+
                 # Send chunk events for LLM streaming
                 if event_type == "on_chat_model_stream":
                     chunk = event.get("data", {}).get("chunk", {})
@@ -580,8 +667,8 @@ async def search_products_stream(request: ShoppingRequest):
                     output_data = event.get("data", {}).get("output")
                     if output_data and event_name != "LangGraph":
                         # Find matching label
-                        icon = "⚙️"
-                        display_name = "Hệ thống"
+                        icon = None
+                        display_name = None
                         for key, (node_icon, label) in node_labels.items():
                             if key in event_name.lower():
                                 icon = node_icon
@@ -611,7 +698,7 @@ async def search_products_stream(request: ShoppingRequest):
                                     output_summary += f" | Query: {query[:30]}..."
                             
                             # Route decision
-                            elif "route" in output_data and display_name != "Hệ thống":
+                            elif "route" in output_data and display_name:
                                 route = output_data["route"]
                                 output_summary = f"→ {route}"
                             
@@ -631,7 +718,7 @@ async def search_products_stream(request: ShoppingRequest):
                                 output_summary = "Đã tạo báo cáo"
                         
                         # Only emit if we have useful info and it's not a generic system node
-                        if output_summary and display_name != "Hệ thống":
+                        if output_summary and display_name:
                             yield f"data: {json.dumps({'type': 'node_output', 'node': display_name, 'icon': icon, 'output': output_summary})}\n\n"
                     
                     # Capture final state
@@ -723,6 +810,32 @@ async def search_products_stream(request: ShoppingRequest):
                     top_recommendation=top_recommendation,
                     matched_products=[p.dict() for p in products],
                 )
+                
+                # Auto-generate title after first turn (non-blocking)
+                if len(session.conversation_history.turns) == 1 and not session.title:
+                    async def generate_title_async():
+                        try:
+                            # Get full response for better LLM context
+                            full_response = final_report.get("content", "") or final_report.get("summary", "") or top_recommendation or ""
+                            
+                            # Generate title using helper function
+                            title = generate_session_title_from_content(request.query, full_response)
+                            
+                            # Update session
+                            session_manager.storage.update_session_title(session_id, title)
+                            logger.info(f"✅ Auto-generated title for session {session_id}: '{title}'")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to auto-generate title for {session_id}: {e}")
+                            # Fallback to first 8 words of query
+                            try:
+                                fallback = ' '.join(request.query.split()[:8])
+                                session_manager.storage.update_session_title(session_id, fallback)
+                                logger.warning(f"Using fallback title: '{fallback}'")
+                            except:
+                                pass
+                    
+                    # Run in background
+                    asyncio.create_task(generate_title_async())
                 
                 # Persist SessionMemory back to session
                 updated_memory = final_state.get("memory")
@@ -836,9 +949,13 @@ async def get_sessions(limit: int = 100, offset: int = 0, user_id: Optional[str]
             if session.user_preferences.max_budget:
                 learned_prefs.append(f"Budget: ${session.user_preferences.max_budget}")
             
+            # Use session.title if set, otherwise fallback to first query
+            display_title = session.title if session.title else (queries[0] if queries else "New conversation")
+            
             sessions_data.append({
                 "session_id": session.session_id,
                 "user_id": session.user_id,
+                "title": display_title,  # LLM-generated or fallback title
                 "created_at": session.created_at.isoformat(),
                 "updated_at": session.conversation_history.updated_at.isoformat(),
                 "queries": queries,
@@ -889,6 +1006,7 @@ async def get_session_detail(session_id: str):
     }
 
 
+
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a session"""
@@ -901,15 +1019,106 @@ async def delete_session(session_id: str):
     return {"message": f"Session {session_id} deleted"}
 
 
+@app.patch("/api/sessions/{session_id}/title")
+async def rename_session(session_id: str, request: dict):
+    """Rename a session
+    
+    Request body:
+        {
+            "title": "New session title"
+        }
+    """
+    if not session_manager:
+        raise HTTPException(status_code=500, detail="Session manager not initialized")
+    
+    title = request.get("title")
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    
+    if not isinstance(title, str) or len(title.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Title must be a non-empty string")
+    
+    if len(title) > 200:
+        raise HTTPException(status_code=400, detail="Title must be less than 200 characters")
+    
+    try:
+        success = session_manager.storage.update_session_title(session_id, title.strip())
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        logger.info(f"Session renamed: {session_id} -> '{title}'")
+        return {"message": "Session renamed successfully", "title": title.strip()}
+    except Exception as e:
+        log_error(error_logger, e, f"Failed to rename session {session_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to rename session: {str(e)}")
+
+
+@app.post("/api/sessions/{session_id}/generate-title")
+async def generate_session_title(session_id: str):
+    """Auto-generate a concise title from first conversation turn using LLM"""
+    if not session_manager:
+        raise HTTPException(status_code=500, detail="Session manager not initialized")
+    
+    try:
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        if not session.conversation_history.turns:
+            raise HTTPException(status_code=400, detail="Session has no conversation to generate title from")
+        
+        # Get first turn
+        first_turn = session.conversation_history.turns[0]
+        user_query = first_turn.user_query
+        
+        # Get full response from multiple sources
+        full_response = (
+            first_turn.metadata.get("final_answer", "") or 
+            first_turn.top_recommendation or 
+            first_turn.metadata.get("final_response", "")
+        )
+        
+        # Generate title using helper function
+        title = generate_session_title_from_content(user_query, full_response)
+        
+        # Update session title
+        success = session_manager.storage.update_session_title(session_id, title)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update title in database")
+        
+        logger.info(f"✅ Generated title for session {session_id}: '{title}'")
+        return {"title": title, "message": "Title generated successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(error_logger, e, f"Failed to generate title for session {session_id}")
+        # Fallback: use first query as title
+        try:
+            session = session_manager.get_session(session_id)
+            if session and session.conversation_history.turns:
+                fallback_title = ' '.join(session.conversation_history.turns[0].user_query.split()[:8])
+                session_manager.storage.update_session_title(session_id, fallback_title)
+                logger.warning(f"⚠️ Using fallback title: '{fallback_title}'")
+                return {"title": fallback_title, "message": "Using fallback title (generation failed)"}
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to generate title: {str(e)}")
+
+
 @app.post("/api/sessions/clear")
 async def clear_all_sessions():
     """Clear all sessions (use with caution!)"""
     if not session_manager:
         raise HTTPException(status_code=500, detail="Session manager not initialized")
     
-    # Note: This requires implementing clear_all in storage
-    logger.warning("Clear all sessions requested - not implemented")
-    return {"message": "Clear all sessions not yet implemented"}
+    try:
+        count = session_manager.storage.clear_all_sessions()
+        logger.info(f"Cleared {count} sessions")
+        return {"message": f"Successfully cleared {count} sessions", "count": count}
+    except Exception as e:
+        log_error(error_logger, e, "Failed to clear sessions")
+        raise HTTPException(status_code=500, detail=f"Failed to clear sessions: {str(e)}")
 
 
 # ============================================================================

@@ -3,12 +3,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
-import { Sparkles, Zap, Target, Scale } from 'lucide-react';
+import { Zap, Target, Scale } from 'lucide-react';
 import ChatLayout from '@/components/ChatLayout';
 import ChatInput from '@/components/ChatInput';
 import ChatMessage, { type ChatMessageData } from '@/components/ChatMessage';
 import { useStreamingSearch } from '@/hooks/useStreamingSearch';
-import type { ShoppingResponse } from '@/lib/api';
+import type { ShoppingResponse, Product } from '@/lib/api';
 
 import ThoughtProcessSidebar from '@/components/ThoughtProcessSidebar';
 
@@ -73,7 +73,7 @@ function ChatPage() {
               recommendation: {
                 recommended_product: (turn.matched_products && turn.matched_products.length > 0) 
                   ? turn.matched_products[0] 
-                  : { title: "History Item", link: "", price: "" } as any,
+                  : { title: "History Item", link: "", price: "", asin: "" } as Product,
                 value_score: 0,
                 reasoning: turn.top_recommendation || "",
                 explanation: ""
@@ -98,8 +98,7 @@ function ChatPage() {
     startStreaming,
     isStreaming,
     currentStep,
-    events,
-    error
+    events
   } = useStreamingSearch({
     onStart: (sid) => {
       sessionIdRef.current = sid; // Update ref immediately for next message
@@ -152,6 +151,10 @@ function ChatPage() {
         }
         return newMessages;
       });
+    },
+    onSessionCreated: (sid) => {
+      // Trigger sidebar refresh immediately via custom event
+      window.dispatchEvent(new CustomEvent('sessionCreated', { detail: { sessionId: sid } }));
     }
   });
 

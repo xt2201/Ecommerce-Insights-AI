@@ -4,17 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { 
   Brain, 
   CheckCircle2, 
-  Circle, 
-  ChevronRight, 
-  ChevronLeft,
+  ChevronRight,
   Loader2,
-  Search,
-  BarChart2,
-  MessageSquare,
-  Sparkles,
-  Shield
+  Sparkles
 } from 'lucide-react';
 import { type StreamEvent } from '@/hooks/useStreamingSearch';
+import { getEventNodeInfo } from '@/lib/eventUtils';
 
 interface ThoughtProcessSidebarProps {
   isOpen: boolean;
@@ -24,48 +19,14 @@ interface ThoughtProcessSidebarProps {
   currentStep: number;
 }
 
-// Agent icons and colors mapping - matches actual graph nodes
-const agentConfig: Record<string, { icon: string; label: string; color: string }> = {
-  'understand': { icon: '🧠', label: 'Hiểu yêu cầu', color: 'from-violet-500 to-purple-500' },
-  'greeting': { icon: '👋', label: 'Chào hỏi', color: 'from-pink-500 to-rose-500' },
-  'search': { icon: '🔍', label: 'Tìm kiếm', color: 'from-blue-500 to-cyan-500' },
-  'analyze': { icon: '📊', label: 'Phân tích', color: 'from-indigo-500 to-blue-500' },
-  'consultation': { icon: '💬', label: 'Tư vấn', color: 'from-green-500 to-emerald-500' },
-  'clarification': { icon: '❓', label: 'Làm rõ', color: 'from-yellow-500 to-amber-500' },
-  'pre_search_consultation': { icon: '🎯', label: 'Tư vấn trước tìm kiếm', color: 'from-sky-500 to-blue-500' },
-  'faq': { icon: '📚', label: 'Câu hỏi thường gặp', color: 'from-teal-500 to-cyan-500' },
-  'synthesize': { icon: '✨', label: 'Tổng hợp', color: 'from-purple-500 to-pink-500' },
-  'system': { icon: '⚙️', label: 'Hệ thống', color: 'from-gray-400 to-gray-500' },
-};
-
-function getAgentInfo(nodeName?: string, event?: any) {
-  // If event has icon, label, and color from backend, use them
-  if (event && event.type === 'progress' && event.icon && event.label && event.color) {
-    console.log('[ThoughtProcess] Using backend metadata:', { node: nodeName, icon: event.icon, label: event.label });
-    return {
-      icon: event.icon,
-      label: event.label,
-      color: event.color
-    };
-  }
-  
-  // Fallback to frontend agentConfig
-  if (!nodeName) {
-    console.log('[ThoughtProcess] No nodeName, using system');
-    return agentConfig['system'];
-  }
-  
-  const key = Object.keys(agentConfig).find(k => nodeName.toLowerCase().includes(k));
-  console.log('[ThoughtProcess] Using frontend config:', { nodeName, key, config: agentConfig[key || 'system'] });
-  return agentConfig[key || 'system'];
-}
+// Default color gradient if not provided by backend
+const DEFAULT_COLOR = 'from-purple-500 to-pink-500';
 
 export default function ThoughtProcessSidebar({
   isOpen,
   onToggle,
   events,
-  isStreaming,
-  currentStep
+  isStreaming
 }: ThoughtProcessSidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(340);
@@ -78,10 +39,11 @@ export default function ThoughtProcessSidebar({
     }
   }, [events]);
 
-  // Filter relevant events
-  const progressEvents = events.filter(e => 
-    e.type === 'progress' || e.type === 'start' || e.type === 'complete' || e.type === 'node_output'
-  );
+  // Filter relevant events - only show progress and node_output with valid node info
+  const progressEvents = events.filter(e => {
+    if (e.type !== 'progress' && e.type !== 'node_output') return false;
+    return getEventNodeInfo(e) !== null;
+  });
 
   // Resize handling
   const startResizing = (e: React.MouseEvent) => {
@@ -180,11 +142,13 @@ export default function ThoughtProcessSidebar({
         ) : (
           <div className="space-y-4">
             {progressEvents.map((event, index) => {
+              const nodeInfo = getEventNodeInfo(event);
+              if (!nodeInfo) return null;
+              
               const isLast = index === progressEvents.length - 1;
               const isActive = isStreaming && isLast;
               const isOutput = event.type === 'node_output';
-              const nodeName = 'node' in event ? event.node : undefined;
-              const agent = getAgentInfo(nodeName, event);
+              const color = nodeInfo.color || DEFAULT_COLOR;
               
               return (
                 <div 
@@ -202,15 +166,15 @@ export default function ThoughtProcessSidebar({
                   {/* Agent Header */}
                   <div className="flex items-center gap-3 mb-2">
                     <div className={`
-                      w-8 h-8 rounded-lg bg-gradient-to-br ${agent.color}
+                      w-8 h-8 rounded-lg bg-gradient-to-br ${color}
                       flex items-center justify-center text-lg
                       ${isActive ? 'animate-pulse' : ''}
                     `}>
-                      {agent.icon}
+                      {nodeInfo.icon}
                     </div>
                     <div className="flex-1">
                       <span className={`text-sm font-semibold ${isActive ? 'text-primary' : 'text-foreground'}`}>
-                        {agent.label}
+                        {nodeInfo.label}
                       </span>
                       {isActive && (
                         <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-primary" />
@@ -222,15 +186,15 @@ export default function ThoughtProcessSidebar({
                   </div>
                   
                   {/* Message */}
-                  {'message' in event && event.message && (
+                  {event.type === 'progress' && event.message && (
                     <p className="text-xs text-muted-foreground leading-relaxed pl-11">
                       {event.message}
                     </p>
                   )}
 
                   {/* Output (collapsible) */}
-                  {(event as any).output && (
-                    <OutputDisplay output={(event as any).output} />
+                  {event.type === 'node_output' && event.output !== undefined && (
+                    <OutputDisplay output={event.output} />
                   )}
                 </div>
               );
@@ -262,10 +226,9 @@ export default function ThoughtProcessSidebar({
   );
 }
 
-function OutputDisplay({ output }: { output: any }) {
+function OutputDisplay({ output }: { output: unknown }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const outputStr = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
-  const isLong = outputStr.length > 100;
 
   return (
     <div className="mt-2 pl-11">

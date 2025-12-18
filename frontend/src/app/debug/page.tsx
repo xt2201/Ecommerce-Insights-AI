@@ -36,8 +36,8 @@ export default function DebugPage() {
       ]);
       setTokenStats(stats);
       setHealthStatus(health);
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch data');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setIsLoading(false);
     }
@@ -48,7 +48,7 @@ export default function DebugPage() {
     try {
       const tracesData = await getGraphTraces(sessionId);
       setTraces(tracesData);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to fetch traces:', err);
     }
   };
@@ -58,8 +58,8 @@ export default function DebugPage() {
     try {
       await resetTokenStats();
       await fetchData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to reset stats');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset stats');
     }
   };
 
@@ -215,7 +215,7 @@ export default function DebugPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(byAgent).map(([agent, usage]: [string, any]) => (
+                    {Object.entries(byAgent).map(([agent, usage]) => (
                       <tr key={agent} className="border-b border-border last:border-0">
                         <td className="p-3 font-medium text-foreground">{agent}</td>
                         <td className="p-3 text-right font-mono text-sm text-muted-foreground">{formatNumber(usage.prompt_tokens)}</td>
@@ -257,7 +257,7 @@ export default function DebugPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(bySessions).map(([sessionId, usage]: [string, any]) => (
+                    {Object.entries(bySessions).map(([sessionId, usage]) => (
                       <tr 
                         key={sessionId} 
                         className="border-b border-border last:border-0 hover:bg-muted/50 cursor-pointer"

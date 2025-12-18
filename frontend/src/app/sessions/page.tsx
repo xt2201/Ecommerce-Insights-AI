@@ -1,6 +1,4 @@
 'use client';
-
-import { useEffect } from 'react';
 import { Plus, History, Trash2 } from 'lucide-react';
 import ChatLayout from '@/components/ChatLayout';
 import LoadingSpinner from '@/components/Loading';
@@ -94,7 +92,7 @@ export default function SessionsPage() {
             <div className="space-y-2">
               {sessions.map((session) => {
                 const queries = Array.isArray(session.queries)
-                  ? session.queries.map((q: any) => typeof q === 'string' ? q : q.query || q)
+                  ? session.queries.map((q: unknown) => typeof q === 'string' ? q : (typeof q === 'object' && q !== null && 'query' in q ? (q as { query: string }).query : String(q)))
                   : [];
                 const firstQuery = queries[0] || 'New conversation';
 

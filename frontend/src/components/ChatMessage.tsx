@@ -1,10 +1,13 @@
 'use client';
 
-import { Bot, User, ExternalLink, Star, Loader2, ChevronDown, ChevronRight, Brain, ShoppingCart, Verified, TrendingUp, Copy, Check } from 'lucide-react';
-import type { Product, ShoppingResponse, StreamEvent } from '@/lib/api';
+import Image from 'next/image';
+import { Bot, User, ExternalLink, Star, Loader2, ChevronRight, Brain, ShoppingCart, Verified, TrendingUp, Copy, Check } from 'lucide-react';
+import type { Product, ShoppingResponse } from '@/lib/api';
+import type { StreamEvent } from '@/hooks/useStreamingSearch';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getEventNodeInfo } from '@/lib/eventUtils';
 
 export interface ChatMessageData {
   id: string;
@@ -93,12 +96,12 @@ function LoadingState() {
   const [dots, setDots] = useState('');
   
   // Animate dots
-  useState(() => {
+  useEffect(() => {
     const interval = setInterval(() => {
       setDots(prev => prev.length >= 3 ? '' : prev + '.');
     }, 500);
     return () => clearInterval(interval);
-  });
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -145,20 +148,6 @@ function AgentStep({ icon, label, status }: { icon: string; label: string; statu
     </div>
   );
 }
-
-function SkeletonCard() {
-  return (
-    <div className="flex gap-4 p-4 rounded-xl border border-border bg-card/50">
-      <div className="w-20 h-20 rounded-lg bg-muted shimmer" />
-      <div className="flex-1 space-y-2">
-        <div className="h-4 w-3/4 rounded bg-muted shimmer" />
-        <div className="h-3 w-1/2 rounded bg-muted shimmer" />
-        <div className="h-6 w-24 rounded bg-muted shimmer" />
-      </div>
-    </div>
-  );
-}
-
 
 /**
  * Copy button with feedback
@@ -246,7 +235,11 @@ function MarkdownContent({ content }: { content: string }) {
 
 function ThinkingAccordion({ events, isComplete }: { events: StreamEvent[], isComplete: boolean }) {
   const [isOpen, setIsOpen] = useState(!isComplete);
-  const progressEvents = events.filter(e => e.type === 'progress' || e.type === 'node_output');
+  
+  const progressEvents = events.filter(e => {
+    if (e.type !== 'progress' && e.type !== 'node_output') return false;
+    return getEventNodeInfo(e) !== null;
+  });
 
   if (progressEvents.length === 0) return null;
 
@@ -267,17 +260,16 @@ function ThinkingAccordion({ events, isComplete }: { events: StreamEvent[], isCo
       {isOpen && (
         <div className="mt-3 ml-6 pl-4 border-l-2 border-purple-500/30 space-y-2">
           {progressEvents.map((e, i) => {
-            // Use icon from event, fallback to gear
-            const icon = e.icon || '⚙️';
-            const nodeName = e.node || 'Hệ thống';
-            const output = e.output;
+            const nodeInfo = getEventNodeInfo(e);
+            if (!nodeInfo) return null;
+            
             const isNodeOutput = e.type === 'node_output';
             
             return (
               <div key={i} className={`text-sm animate-fade-in ${isNodeOutput ? 'bg-muted/30 rounded-lg p-2' : ''}`}>
                 <div className="flex items-center gap-2 font-medium text-foreground">
-                  <span>{icon}</span>
-                  <span>{nodeName}</span>
+                  <span>{nodeInfo.icon}</span>
+                  <span>{nodeInfo.label}</span>
                   {isNodeOutput && (
                     <span className="text-positive ml-auto">
                       <Check className="w-4 h-4" />
@@ -285,12 +277,12 @@ function ThinkingAccordion({ events, isComplete }: { events: StreamEvent[], isCo
                   )}
                 </div>
                 {/* Show output for node_output events, message for progress events */}
-                {output && (
+                {e.type === 'node_output' && e.output !== undefined && (
                   <div className="text-xs text-muted-foreground ml-6 mt-1 font-mono bg-muted/50 px-2 py-1 rounded">
-                    {output}
+                    {String(typeof e.output === 'string' ? e.output : JSON.stringify(e.output))}
                   </div>
                 )}
-                {e.message && !isNodeOutput && (
+                {e.type === 'progress' && e.message && (
                   <div className="text-muted-foreground ml-6 mt-0.5">{e.message}</div>
                 )}
               </div>
@@ -349,7 +341,7 @@ function AssistantResponse({
             </span>
           </div>
           
-          <EnhancedProductCard product={recommendation.recommended_product} featured />
+          <EnhancedProductCard product={recommendation.recommended_product} />
           
           <div className="mt-4 p-3 bg-muted/50 rounded-xl border border-border">
             <p className="text-sm text-foreground leading-relaxed">
@@ -424,11 +416,9 @@ function AssistantResponse({
  */
 function EnhancedProductCard({ 
   product, 
-  featured = false,
   compact = false 
 }: { 
   product: Product;
-  featured?: boolean;
   compact?: boolean;
 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -450,13 +440,16 @@ function EnhancedProductCard({
             <div className="absolute inset-0 bg-muted shimmer" />
           )}
           {(product.thumbnail || product.image) && !imageError ? (
-            <img
-              src={product.thumbnail || product.image}
+            <Image
+              src={(product.thumbnail || product.image) as string}
               alt={product.title}
+              width={64}
+              height={64}
               className={`w-full h-full object-cover transition-all duration-300 
                 group-hover:scale-110 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}
+              unoptimized
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-2xl">📦</div>
@@ -495,13 +488,16 @@ function EnhancedProductCard({
           <div className="absolute inset-0 bg-muted shimmer" />
         )}
         {(product.thumbnail || product.image) && !imageError ? (
-          <img
-            src={product.thumbnail || product.image}
+          <Image
+            src={(product.thumbnail || product.image) as string}
             alt={product.title}
+            width={112}
+            height={112}
             className={`w-full h-full object-cover transition-all duration-500 
               group-hover/img:scale-110 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
+            unoptimized
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-4xl">📦</div>

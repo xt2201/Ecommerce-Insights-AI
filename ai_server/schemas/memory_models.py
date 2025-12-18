@@ -193,6 +193,7 @@ class SessionState:
     
     session_id: str
     user_id: Optional[str] = None
+    title: str = ""  # Session title (auto-generated from first query or user-renamed)
     conversation_history: ConversationHistory = field(default_factory=lambda: ConversationHistory(session_id=""))
     user_preferences: UserPreferences = field(default_factory=lambda: UserPreferences(session_id=""))
     # Added ConversationContext for multi-turn state persistence
@@ -228,6 +229,7 @@ class SessionState:
         return {
             "session_id": self.session_id,
             "user_id": self.user_id,
+            "title": self.title,
             "conversation_history": self.conversation_history.to_dict(),
             "user_preferences": self.user_preferences.to_dict(),
             "conversation_context": self.conversation_context.model_dump(),

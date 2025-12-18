@@ -30,6 +30,7 @@ class SQLiteStorage(StorageBackend):
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     user_id TEXT,
+                    title TEXT DEFAULT '',
                     session_data TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -43,6 +44,16 @@ class SQLiteStorage(StorageBackend):
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_expires_at ON sessions(expires_at)
             """)
+            
+            # Migration: Add title column if it doesn't exist
+            try:
+                cursor = conn.execute("PRAGMA table_info(sessions)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'title' not in columns:
+                    conn.execute("ALTER TABLE sessions ADD COLUMN title TEXT DEFAULT ''")
+            except Exception:
+                pass  # Column might already exist
+            
             conn.commit()
     
     def save_session(self, session: SessionState) -> None:
@@ -52,11 +63,12 @@ class SQLiteStorage(StorageBackend):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO sessions 
-                (session_id, user_id, session_data, created_at, updated_at, expires_at, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (session_id, user_id, title, session_data, created_at, updated_at, expires_at, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 session.session_id,
                 session.user_id,
+                session.title,
                 session_data,
                 session.created_at.isoformat(),
                 datetime.now().isoformat(),
@@ -79,6 +91,44 @@ class SQLiteStorage(StorageBackend):
             
             session_dict = json.loads(row[0])
             return SessionState.from_dict(session_dict)
+    
+    def update_session_title(self, session_id: str, title: str) -> bool:
+        """Update session title.
+        
+        Args:
+            session_id: ID of the session to update
+            title: New title for the session
+            
+        Returns:
+            True if successful, False if session not found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            # Update title column for fast access
+            cursor = conn.execute("""
+                UPDATE sessions SET title = ?, updated_at = ?
+                WHERE session_id = ? AND is_active = 1
+            """, (title, datetime.now().isoformat(), session_id))
+            
+            if cursor.rowcount == 0:
+                return False
+            
+            # Also update in session_data for consistency
+            cursor = conn.execute("""
+                SELECT session_data FROM sessions 
+                WHERE session_id = ? AND is_active = 1
+            """, (session_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                session_dict = json.loads(row[0])
+                session_dict['title'] = title
+                conn.execute("""
+                    UPDATE sessions SET session_data = ?
+                    WHERE session_id = ?
+                """, (json.dumps(session_dict), session_id))
+            
+            conn.commit()
+            return True
     
     def delete_session(self, session_id: str) -> None:
         """Delete a session from SQLite."""

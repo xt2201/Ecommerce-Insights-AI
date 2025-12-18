@@ -39,7 +39,7 @@ export function useSession() {
             await getSessionDetail(stored);
             setSessionId(stored);
             console.log('✅ Restored session:', stored);
-          } catch (err) {
+          } catch {
             // Session doesn't exist on backend, create new one
             console.warn('⚠️ Stored session invalid, creating new session');
             const response = await createSession();

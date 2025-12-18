@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 /**
  * Streaming Search Hook with Server-Sent Events
@@ -12,7 +12,7 @@ import type { ShoppingResponse } from '@/lib/api';
 export type StreamEvent =
   | { type: 'start'; session_id: string }
   | { type: 'progress'; step: number; node: string; message: string; icon?: string; label?: string; color?: string }
-  | { type: 'node_output'; node: string; output: any }
+  | { type: 'node_output'; node: string; output: unknown }
   | { type: 'chunk'; content: string }
   | { type: 'interrupt'; node: string; message: string; thread_id: string }
   | { type: 'complete'; result: ShoppingResponse }
@@ -26,6 +26,7 @@ export interface UseStreamingSearchOptions {
   onInterrupt?: (message: string, threadId: string) => void;
   onComplete?: (result: unknown) => void;
   onError?: (error: string) => void;
+  onSessionCreated?: (sessionId: string) => void; // NEW: Called when session is created
 }
 
 
@@ -109,6 +110,12 @@ export function useStreamingSearch(options: UseStreamingSearchOptions = {}) {
                 break;
               case 'complete':
                 options.onComplete?.(event.result);
+                // Notify sidebar to reload if this was first query (session just created)
+                const result = event.result as ShoppingResponse;
+                if (result?.session_id && !sessionId) {
+                  // This was a new session, trigger reload
+                  options.onSessionCreated?.(result.session_id);
+                }
                 setIsStreaming(false);
                 break;
               case 'error':

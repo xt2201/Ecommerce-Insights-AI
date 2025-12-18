@@ -52,6 +52,7 @@ export interface ShoppingResponse {
 export interface SessionInfo {
   session_id: string;
   user_id?: string;
+  title: string;  // LLM-generated session title
   created_at: string;
   updated_at: string;
   queries: string[];
@@ -117,8 +118,8 @@ export interface StreamEvent {
   message?: string;
   content?: string;
   thread_id?: string;
-  result?: any;
-  output?: any;
+  result?: ShoppingResponse;
+  output?: unknown;
 }
 
 // ============================================================================
@@ -253,15 +254,44 @@ export async function deleteSession(sessionId: string): Promise<{ message: strin
 }
 
 /**
+ * PATCH /api/sessions/{session_id}/title
+ * Rename a session
+ */
+export async function renameSession(
+  sessionId: string,
+  title: string
+): Promise<{ message: string; title: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/title`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  return handleResponse<{ message: string; title: string }>(response);
+}
+
+/**
  * POST /api/sessions/clear
  * Clear all sessions
  */
-export async function clearAllSessions(): Promise<{ message: string }> {
+export async function clearAllSessions(): Promise<{ message: string; count: number }> {
   const response = await fetch(`${API_BASE_URL}/api/sessions/clear`, {
     method: 'POST',
   });
-  return handleResponse<{ message: string }>(response);
+  return handleResponse<{ message: string; count: number }>(response);
 }
+
+/**
+ * POST /api/sessions/{session_id}/generate-title
+ * Auto-generate session title using LLM
+ */
+export async function generateSessionTitle(sessionId: string): Promise<{ title: string; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/generate-title`, {
+    method: 'POST',
+  });
+  return handleResponse<{ title: string; message: string }>(response);
+}
+
+
 
 // ============================================================================
 // Monitoring & Debug Endpoints
